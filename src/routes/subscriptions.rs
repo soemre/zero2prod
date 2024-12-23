@@ -1,6 +1,12 @@
-use actix_web::{post, web::Form, HttpResponse};
-
+use actix_web::{
+    post,
+    web::{Data, Form},
+    HttpResponse,
+};
+use chrono::Utc;
 use serde::Deserialize;
+use sqlx::PgPool;
+use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub struct SubscriptionForm {
@@ -9,12 +15,24 @@ pub struct SubscriptionForm {
 }
 
 #[post("/subscriptions")]
-pub async fn subscribe(form: Form<SubscriptionForm>) -> HttpResponse {
-    let mut response = if !form.name.is_empty() && !form.email.is_empty() {
-        HttpResponse::Ok()
-    } else {
-        HttpResponse::BadRequest()
-    };
-
-    response.finish()
+pub async fn subscribe(form: Form<SubscriptionForm>, db_pool: Data<PgPool>) -> HttpResponse {
+    match sqlx::query!(
+        r#"
+        INSERT INTO subscriptions (id, email, name, subscribed_at)
+        VALUES ($1, $2, $3, $4)
+        "#,
+        Uuid::new_v4(),
+        form.email,
+        form.name,
+        Utc::now(),
+    )
+    .execute(db_pool.get_ref())
+    .await
+    {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(e) => {
+            eprintln!("Failed to execute query: {}", e);
+            HttpResponse::InternalServerError().finish()
+        }
+    }
 }

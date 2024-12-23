@@ -7,12 +7,12 @@ use utils::*;
 #[tokio::test]
 async fn health_check_works() {
     // Arrange
-    let addr = spawn_app();
+    let app = TestApp::spawn().await;
     let client = Client::new();
 
     // Act
     let response = client
-        .get(format!("{addr}/health_check"))
+        .get(format!("{}/health_check", app.addr))
         .send()
         .await
         .expect("Failed to execute request.");
