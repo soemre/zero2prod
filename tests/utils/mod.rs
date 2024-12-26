@@ -1,13 +1,18 @@
 use sqlx::{Connection, Executor, PgConnection, PgPool};
-use std::net::TcpListener;
+use std::{env, io, net::TcpListener, sync::LazyLock};
 use uuid::Uuid;
 
 use zero2prod::{
     config::{self, DatabaseSettings},
-    startup,
+    startup, telemetry,
 };
 
 const DB_CONNECTION_FAIL: &str = "Failed to connect to Postgres";
+
+const LOGGER_NAME: &str = "test";
+const LOGGER_FILTER_LEVEL: &str = "info";
+
+static TRACING: LazyLock<()> = LazyLock::new(TestApp::init_logging);
 
 pub struct TestApp {
     pub addr: String,
@@ -18,6 +23,8 @@ impl TestApp {
     /// Runs the app in the background at a random port
     /// and returns the bound address in "http://addr:port" format.
     pub async fn spawn() -> TestApp {
+        LazyLock::force(&TRACING);
+
         let listener = TcpListener::bind(("127.0.0.1", 0)).expect("Failed to bind address.");
         let addr = listener.local_addr().unwrap();
         let addr = format!("http://{}:{}", addr.ip(), addr.port());
@@ -25,40 +32,60 @@ impl TestApp {
         let mut config = config::get().expect("Failed to read configuration");
         config.database.name = Uuid::new_v4().to_string();
 
-        let db_pool = spawn_db(&config.database).await;
+        let db_pool = TestApp::init_db(&config.database).await;
 
-        let server = startup::run(listener, db_pool.clone()).expect("Failed to run the server.");
+        let server =
+            startup::run(listener, PgPool::clone(&db_pool)).expect("Failed to run the server.");
         tokio::spawn(server);
 
         TestApp { db_pool, addr }
     }
-}
 
-async fn spawn_db(config: &DatabaseSettings) -> PgPool {
-    // Create Database
-    let maintenance_settings = DatabaseSettings {
-        name: "postgres".to_string(),
-        username: "postgres".to_string(),
-        password: "password".to_string(),
-        ..config.clone()
-    };
+    fn init_logging() {
+        let subscriber: Box<dyn tracing::subscriber::Subscriber + Send + Sync> =
+            if env::var("TEST_LOG").is_ok() {
+                Box::new(telemetry::get_subscriber(
+                    LOGGER_NAME,
+                    LOGGER_FILTER_LEVEL,
+                    io::stdout,
+                ))
+            } else {
+                Box::new(telemetry::get_subscriber(
+                    LOGGER_NAME,
+                    LOGGER_FILTER_LEVEL,
+                    io::sink,
+                ))
+            };
 
-    PgConnection::connect(&maintenance_settings.url())
-        .await
-        .expect(DB_CONNECTION_FAIL)
-        .execute(format!(r#"CREATE DATABASE "{}";"#, config.name).as_str())
-        .await
-        .expect("Failed to create database");
+        telemetry::init_subscriber(subscriber)
+    }
 
-    // Migrate Database
-    let db_pool = PgPool::connect(&config.url())
-        .await
-        .expect(DB_CONNECTION_FAIL);
+    async fn init_db(config: &DatabaseSettings) -> PgPool {
+        // Create Database
+        let maintenance_settings = DatabaseSettings {
+            name: "postgres".to_string(),
+            username: "postgres".to_string(),
+            password: "password".to_string(),
+            ..config.clone()
+        };
 
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to migrate the database");
+        PgConnection::connect(&maintenance_settings.url())
+            .await
+            .expect(DB_CONNECTION_FAIL)
+            .execute(format!(r#"CREATE DATABASE "{}";"#, config.name).as_str())
+            .await
+            .expect("Failed to create database");
 
-    db_pool
+        // Migrate Database
+        let db_pool = PgPool::connect(&config.url())
+            .await
+            .expect(DB_CONNECTION_FAIL);
+
+        sqlx::migrate!("./migrations")
+            .run(&db_pool)
+            .await
+            .expect("Failed to migrate the database");
+
+        db_pool
+    }
 }
