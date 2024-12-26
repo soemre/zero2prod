@@ -1,3 +1,4 @@
+use secrecy::ExposeSecret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::{env, io, net::TcpListener, sync::LazyLock};
 use uuid::Uuid;
@@ -63,13 +64,13 @@ impl TestApp {
     async fn init_db(config: &DatabaseSettings) -> PgPool {
         // Create Database
         let maintenance_settings = DatabaseSettings {
-            name: "postgres".to_string(),
-            username: "postgres".to_string(),
-            password: "password".to_string(),
+            name: "postgres".into(),
+            username: "postgres".into(),
+            password: "password".into(),
             ..config.clone()
         };
 
-        PgConnection::connect(&maintenance_settings.url())
+        PgConnection::connect(&maintenance_settings.url().expose_secret())
             .await
             .expect(DB_CONNECTION_FAIL)
             .execute(format!(r#"CREATE DATABASE "{}";"#, config.name).as_str())
@@ -77,7 +78,7 @@ impl TestApp {
             .expect("Failed to create database");
 
         // Migrate Database
-        let db_pool = PgPool::connect(&config.url())
+        let db_pool = PgPool::connect(&config.url().expose_secret())
             .await
             .expect(DB_CONNECTION_FAIL);
 

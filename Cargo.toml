@@ -7,9 +7,11 @@ edition = "2021"
 actix-web = "4.9.0"
 chrono = { version = "0.4.39", default-features = false, features = ["clock"] }
 config = "0.15.4"
+secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.216", features = ["derive"] }
 tokio = { version = "1.42.0", features = ["macros"] }
 tracing = "0.1.41"
+tracing-actix-web = "0.7.15"
 tracing-bunyan-formatter = "0.3.10"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.19", features = [

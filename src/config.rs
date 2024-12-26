@@ -1,4 +1,5 @@
 use config::{Config, ConfigError, File, FileFormat};
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -15,18 +16,23 @@ pub struct ApplicationSettings {
 #[derive(Deserialize, Clone)]
 pub struct DatabaseSettings {
     pub username: String,
-    pub password: String,
+    pub password: SecretString,
     pub host: String,
     pub port: u16,
     pub name: String,
 }
 
 impl DatabaseSettings {
-    pub fn url(&self) -> String {
+    pub fn url(&self) -> SecretString {
         format!(
             "postgres://{}:{}@{}:{}/{}",
-            self.username, self.password, self.host, self.port, self.name
+            self.username,
+            self.password.expose_secret(),
+            self.host,
+            self.port,
+            self.name
         )
+        .into()
     }
 }
 
