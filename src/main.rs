@@ -9,9 +9,8 @@ async fn main() -> Result<()> {
     telemetry::init_subscriber(subscriber);
 
     let config = config::get().expect("Failed to read configuration");
-    let listener = TcpListener::bind(("127.0.0.1", config.application.port))?;
-    let db_conn = PgPool::connect(&config.database.url().expose_secret())
-        .await
+    let listener = TcpListener::bind((config.application.host, config.application.port))?;
+    let db_conn = PgPool::connect_lazy(&config.database.url().expose_secret())
         .expect("Failed to connect to Postgres");
 
     run(listener, db_conn)?.await
