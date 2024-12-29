@@ -13,6 +13,22 @@ services:
     http_port: 8000
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-0.5gb
+    envs:
+      - key: APP__DATABASE__USERNAME
+        value: ${newsletter.USERNAME}
+        scope: RUN_TIME
+      - key: APP__DATABASE__PASSWORD
+        value: ${newsletter.PASSWORD}
+        scope: RUN_TIME
+      - key: APP__DATABASE__HOST
+        value: ${newsletter.HOSTNAME}
+        scope: RUN_TIME
+      - key: APP__DATABASE__PORT
+        value: ${newsletter.PORT}
+        scope: RUN_TIME
+      - key: APP__DATABASE__NAME
+        value: ${newsletter.DATABASE}
+        scope: RUN_TIME
 databases:
   - name: newsletter
     engine: PG

@@ -1,6 +1,8 @@
 use config::{Config, File};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
+use serde_aux::field_attributes::deserialize_number_from_string;
+use sqlx::postgres::{PgConnectOptions, PgSslMode};
 use std::{env, error::Error};
 
 #[derive(Deserialize)]
@@ -12,6 +14,7 @@ pub struct Settings {
 #[derive(Deserialize, Clone)]
 pub struct ApplicationSettings {
     pub host: String,
+    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
 }
 
@@ -20,21 +23,27 @@ pub struct DatabaseSettings {
     pub username: String,
     pub password: SecretString,
     pub host: String,
+    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub name: String,
+    pub require_ssl: bool,
 }
 
 impl DatabaseSettings {
-    pub fn url(&self) -> SecretString {
-        format!(
-            "postgres://{}:{}@{}:{}/{}",
-            self.username,
-            self.password.expose_secret(),
-            self.host,
-            self.port,
-            self.name
-        )
-        .into()
+    pub fn connect_options(&self) -> PgConnectOptions {
+        let ssl_mode = if self.require_ssl {
+            PgSslMode::Require
+        } else {
+            PgSslMode::Prefer
+        };
+
+        PgConnectOptions::new()
+            .username(&self.username)
+            .password(&self.password.expose_secret())
+            .host(&self.host)
+            .port(self.port)
+            .database(&self.name)
+            .ssl_mode(ssl_mode)
     }
 }
 
@@ -56,6 +65,11 @@ pub fn get() -> Result<Settings, Box<dyn Error>> {
     let settings = Config::builder()
         .add_source(File::from(config_path.join("Base.toml")))
         .add_source(File::from(config_path.join(env_file)))
+        .add_source(
+            config::Environment::with_prefix("APP")
+                .prefix_separator("__")
+                .separator("__"),
+        )
         .build()?;
 
     Ok(settings.try_deserialize::<Settings>()?)
