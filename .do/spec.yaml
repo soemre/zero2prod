@@ -32,6 +32,6 @@ services:
 databases:
   - name: newsletter
     engine: PG
-    version: "16"
+    version: "14"
     num_nodes: 1
     size: db-s-dev-database
