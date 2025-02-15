@@ -26,8 +26,10 @@ impl TestApp {
         LazyLock::force(&TRACING);
 
         let listener = TcpListener::bind(("127.0.0.1", 0)).expect("Failed to bind address.");
-        let addr = listener.local_addr().unwrap();
-        let addr = format!("http://{}:{}", addr.ip(), addr.port());
+        let addr = {
+            let raw = listener.local_addr().unwrap();
+            format!("http://{}:{}", raw.ip(), raw.port())
+        };
 
         let mut config = config::get().expect("Failed to read configuration");
         config.database.name = Uuid::new_v4().to_string();

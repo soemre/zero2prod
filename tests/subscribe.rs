@@ -4,6 +4,8 @@ use tokio;
 mod utils;
 use utils::*;
 
+const RQST_FAIL: &'static str = "Failed to execute request.";
+
 #[tokio::test]
 async fn subscribe_returns_a_200_for_valid_form_data() {
     // Arrange
@@ -19,7 +21,7 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
         .body(body)
         .send()
         .await
-        .expect("Failed to execute request.");
+        .expect(RQST_FAIL);
 
     // Assert
     assert_eq!(200, response.status().as_u16());
@@ -52,7 +54,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
             .body(invalid_body)
             .send()
             .await
-            .expect("Failed to execute request.");
+            .expect(RQST_FAIL);
 
         // Assert
         assert_eq!(
@@ -60,6 +62,37 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
             response.status().as_u16(),
             "The API did not fail with 400 Bad Request when the payload was {}.",
             error_message,
+        )
+    }
+}
+
+#[tokio::test]
+async fn subscribe_returns_a_400_when_fields_are_present_but_invalid() {
+    // Arrange
+    let app = TestApp::spawn().await;
+    let client = Client::new();
+    let cases = vec![
+        ("name=&email=ursula_le_guin%40gmail.com", "empty name"),
+        ("name=Ursula&email=", "empty email"),
+        ("name=Ursula&email=definitely-not-an-email", "invalid email"),
+    ];
+
+    for (body, dsc) in cases {
+        // Act
+        let rsp = client
+            .post(format!("{}/subscriptions", app.addr))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await
+            .expect(RQST_FAIL);
+
+        // Assert
+        assert_eq!(
+            400,
+            rsp.status().as_u16(),
+            "The API did not return 400 Bad Request when the payload was {}.",
+            dsc
         )
     }
 }

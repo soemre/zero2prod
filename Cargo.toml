@@ -19,6 +19,7 @@ tracing-subscriber = { version = "0.3.19", features = [
     "registry",
     "env-filter",
 ] }
+unicode-segmentation = "1.12.0"
 uuid = { version = "1.11.0", features = ["v4"] }
 
 [dependencies.sqlx]
@@ -34,6 +35,7 @@ features = [
 ]
 
 [dev-dependencies]
+claims = "0.8.0"
 reqwest = "0.12.9"
 
 [profile.release]
