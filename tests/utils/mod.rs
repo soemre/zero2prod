@@ -1,9 +1,9 @@
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::{env, io, net::TcpListener, sync::LazyLock};
 use uuid::Uuid;
-
 use zero2prod::{
     config::{self, DatabaseSettings},
+    email_client::EmailClient,
     startup, telemetry,
 };
 
@@ -32,13 +32,24 @@ impl TestApp {
             format!("http://{}:{}", raw.ip(), raw.port())
         };
 
-        let mut config = config::get().expect("Failed to read configuration");
-        config.database.name = Uuid::new_v4().to_string();
+        let config = {
+            let mut raw = config::get().expect("Failed to read configuration");
+            raw.database.name = Uuid::new_v4().to_string();
+            raw
+        };
 
         let db_pool = TestApp::init_db(&config.database).await;
 
-        let server =
-            startup::run(listener, PgPool::clone(&db_pool)).expect("Failed to run the server.");
+        let email_client = {
+            let sender = config
+                .email_client
+                .sender()
+                .expect("Invalid sender email address.");
+            EmailClient::new(config.email_client.base_url, sender)
+        };
+
+        let server = startup::run(listener, PgPool::clone(&db_pool), email_client)
+            .expect("Failed to run the server.");
         tokio::spawn(server);
 
         TestApp { db_pool, addr }

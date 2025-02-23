@@ -1,3 +1,4 @@
+use crate::domain::SubscriberEmail;
 use config::{Config, File};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
@@ -9,6 +10,7 @@ use std::{env, error::Error};
 pub struct Settings {
     pub application: ApplicationSettings,
     pub database: DatabaseSettings,
+    pub email_client: EmailClientSettings,
 }
 
 #[derive(Deserialize, Clone)]
@@ -44,6 +46,18 @@ impl DatabaseSettings {
             .port(self.port)
             .database(&self.name)
             .ssl_mode(ssl_mode)
+    }
+}
+
+#[derive(Deserialize, Clone)]
+pub struct EmailClientSettings {
+    pub base_url: String,
+    pub sender_email: String,
+}
+
+impl EmailClientSettings {
+    pub fn sender(&self) -> Result<SubscriberEmail, String> {
+        SubscriberEmail::parse(self.sender_email.clone())
     }
 }
 

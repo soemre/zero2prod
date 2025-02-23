@@ -7,6 +7,10 @@ edition = "2021"
 actix-web = "4.9.0"
 chrono = { version = "0.4.39", default-features = false, features = ["clock"] }
 config = "0.15.4"
+reqwest = { version = "0.12.9", default-features = false, features = [
+    "json",
+    "rustls-tls",
+] }
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.216", features = ["derive"] }
 serde-aux = "4.5.0"
@@ -41,7 +45,8 @@ fake = "4.0.0"
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
 rand = "0.9.0"
-reqwest = "0.12.9"
+tokio = { version = "1.42.0", features = ["rt", "macros"] }
+wiremock = "0.6.2"
 
 [profile.release]
 strip = "symbols"
