@@ -21,6 +21,7 @@ tracing-subscriber = { version = "0.3.19", features = [
 ] }
 unicode-segmentation = "1.12.0"
 uuid = { version = "1.11.0", features = ["v4"] }
+validator = "0.20.0"
 
 [dependencies.sqlx]
 version = "0.8"
@@ -36,6 +37,10 @@ features = [
 
 [dev-dependencies]
 claims = "0.8.0"
+fake = "4.0.0"
+quickcheck = "1.0.3"
+quickcheck_macros = "1.0.0"
+rand = "0.9.0"
 reqwest = "0.12.9"
 
 [profile.release]

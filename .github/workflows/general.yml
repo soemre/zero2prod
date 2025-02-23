@@ -2,6 +2,15 @@
 # The name of your workflow. GitHub displays the names of your workflows on your repository's "Actions" tab
 name: Rust
 
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+
 env:
   CARGO_TERM_COLOR: always
   SQLX_VERSION: 0.8.0

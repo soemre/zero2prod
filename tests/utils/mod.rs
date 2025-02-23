@@ -14,6 +14,7 @@ const LOGGER_FILTER_LEVEL: &str = "info";
 
 static TRACING: LazyLock<()> = LazyLock::new(TestApp::init_logging);
 
+#[allow(dead_code)]
 pub struct TestApp {
     pub addr: String,
     pub db_pool: PgPool,
