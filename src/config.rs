@@ -1,5 +1,6 @@
 use crate::domain::SubscriberEmail;
 use config::{Config, File};
+use reqwest::Url;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_aux::field_attributes::deserialize_number_from_string;
@@ -53,11 +54,16 @@ impl DatabaseSettings {
 pub struct EmailClientSettings {
     pub base_url: String,
     pub sender_email: String,
+    pub auth_token: SecretString,
 }
 
 impl EmailClientSettings {
     pub fn sender(&self) -> Result<SubscriberEmail, String> {
         SubscriberEmail::parse(self.sender_email.clone())
+    }
+
+    pub fn url(&self) -> Result<Url, String> {
+        Url::parse(&self.base_url).map_err(|e| e.to_string())
     }
 }
 

@@ -41,11 +41,11 @@ impl TestApp {
         let db_pool = TestApp::init_db(&config.database).await;
 
         let email_client = {
-            let sender = config
-                .email_client
-                .sender()
-                .expect("Invalid sender email address.");
-            EmailClient::new(config.email_client.base_url, sender)
+            let ec = config.email_client;
+            let sender = ec.sender().expect("Invalid sender email address.");
+            let url = ec.url().expect("Invalid base url.");
+            let auth_token = ec.auth_token;
+            EmailClient::new(url, sender, auth_token)
         };
 
         let server = startup::run(listener, PgPool::clone(&db_pool), email_client)
