@@ -26,7 +26,7 @@ impl EmailClient {
         subject: &str,
         html_body: &str,
         text_body: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), reqwest::Error> {
         let body = SendEmailRequest {
             from: &self.sender.as_ref(),
             to: recipient.as_ref(),
@@ -46,7 +46,7 @@ impl EmailClient {
                 .header("X-Postmark-Server-Token", self.auth_token.expose_secret())
                 .json(&body)
                 .send()
-                .await
+                .await?
         };
 
         Ok(())
