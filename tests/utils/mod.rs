@@ -44,8 +44,9 @@ impl TestApp {
             let ec = config.email_client;
             let sender = ec.sender().expect("Invalid sender email address.");
             let url = ec.url().expect("Invalid base url.");
+            let timeout = ec.timeout();
             let auth_token = ec.auth_token;
-            EmailClient::new(url, sender, auth_token)
+            EmailClient::new(url, sender, auth_token, timeout)
         };
 
         let server = startup::run(listener, PgPool::clone(&db_pool), email_client)

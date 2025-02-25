@@ -5,7 +5,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_aux::field_attributes::deserialize_number_from_string;
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
-use std::{env, error::Error};
+use std::{env, error::Error, time::Duration};
 
 #[derive(Deserialize)]
 pub struct Settings {
@@ -55,6 +55,7 @@ pub struct EmailClientSettings {
     pub base_url: String,
     pub sender_email: String,
     pub auth_token: SecretString,
+    pub timeout_ms: u64,
 }
 
 impl EmailClientSettings {
@@ -64,6 +65,10 @@ impl EmailClientSettings {
 
     pub fn url(&self) -> Result<Url, String> {
         Url::parse(&self.base_url).map_err(|e| e.to_string())
+    }
+
+    pub fn timeout(&self) -> Duration {
+        Duration::from_millis(self.timeout_ms)
     }
 }
 

@@ -13,3 +13,4 @@ name = "newsletter"
 base_url = "http://localhost"
 sender_email = "test@gmail.com"
 auth_token = "my-secret-token"
+timeout_ms = 10000
