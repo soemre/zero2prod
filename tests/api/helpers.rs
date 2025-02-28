@@ -1,3 +1,4 @@
+use reqwest::{Body, Client, Response};
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::{env, io, sync::LazyLock};
 use uuid::Uuid;
@@ -8,6 +9,7 @@ use zero2prod::{
 };
 
 const DB_CONNECTION_FAIL: &str = "Failed to connect to Postgres";
+const RQST_FAIL: &'static str = "Failed to execute request.";
 
 const LOGGER_NAME: &str = "test";
 const LOGGER_FILTER_LEVEL: &str = "info";
@@ -96,5 +98,15 @@ impl TestApp {
             .expect("Failed to migrate the database");
 
         db_pool
+    }
+
+    pub async fn post_subscriptions(&self, body: impl Into<Body>) -> Response {
+        Client::new()
+            .post(format!("{}/subscriptions", self.addr))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await
+            .expect(RQST_FAIL)
     }
 }
