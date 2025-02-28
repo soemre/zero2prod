@@ -1,8 +1,6 @@
+use crate::helpers::*;
 use reqwest::Client;
 use tokio;
-
-mod utils;
-use utils::*;
 
 const RQST_FAIL: &'static str = "Failed to execute request.";
 

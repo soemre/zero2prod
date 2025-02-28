@@ -1,8 +1,6 @@
+use crate::helpers::*;
 use reqwest::Client;
 use tokio;
-
-mod utils;
-use utils::*;
 
 #[tokio::test]
 async fn health_check_works() {
