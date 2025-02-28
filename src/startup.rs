@@ -19,6 +19,7 @@ impl App {
         // create the app dependencies
         let listener =
             TcpListener::bind((config.application.host.clone(), config.application.port))?;
+        let socket_addr = listener.local_addr().unwrap();
         let db_conn = Self::get_db_pool(&config.database);
         let email_client = {
             let ec = &config.email_client;
@@ -28,10 +29,10 @@ impl App {
             let auth_token = ec.auth_token.clone();
             EmailClient::new(url, sender, auth_token, timeout)
         };
+        let base_url = AppBaseUrl(config.application.base_url.clone());
 
         // create the app runner
-        let socket_addr = listener.local_addr().unwrap();
-        let server = Self::get_server_runner(listener, db_conn, email_client)?;
+        let server = Self::get_server_runner(listener, db_conn, email_client, base_url)?;
 
         Ok(Self {
             server,
@@ -43,16 +44,20 @@ impl App {
         listener: TcpListener,
         db_pool: PgPool,
         email_client: EmailClient,
+        base_url: AppBaseUrl,
     ) -> Result<Server> {
         let db_pool = Data::new(db_pool);
         let email_client = Data::new(email_client);
+        let base_url = Data::new(base_url);
         let server = HttpServer::new(move || {
             actix_web::App::new()
                 .wrap(TracingLogger::default())
                 .service(routes::health_check)
                 .service(routes::subscribe)
+                .service(routes::confirm)
                 .app_data(Data::clone(&db_pool))
                 .app_data(Data::clone(&email_client))
+                .app_data(Data::clone(&base_url))
         })
         .listen(listener)?
         .run();
@@ -72,3 +77,5 @@ impl App {
         self.server.await
     }
 }
+
+pub struct AppBaseUrl(pub String);

@@ -29,6 +29,9 @@ services:
       - key: APP__DATABASE__NAME
         value: ${newsletter.DATABASE}
         scope: RUN_TIME
+      - key: APP__APPLICATION__BASE_URL
+        value: ${APP_URL}
+        scope: RUN_TIME
 databases:
   - name: newsletter
     engine: PG

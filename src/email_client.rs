@@ -30,7 +30,7 @@ impl EmailClient {
 
     pub async fn send_email(
         &self,
-        recipient: SubscriberEmail,
+        recipient: &SubscriberEmail,
         subject: &str,
         html_body: &str,
         text_body: &str,
@@ -117,7 +117,7 @@ mod tests {
         let subject: String = Sentence(1..2).fake();
 
         email_client
-            .send_email(subscriber_email, &subject, &content, &content)
+            .send_email(&subscriber_email, &subject, &content, &content)
             .await
     }
 
