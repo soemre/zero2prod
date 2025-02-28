@@ -55,8 +55,8 @@ impl TryFrom<SubscriptionForm> for NewSubscriber {
 async fn insert_subscriber(ns: &NewSubscriber, db_pool: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
-        INSERT INTO subscriptions (id, email, name, subscribed_at)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO subscriptions (id, email, name, subscribed_at, status)
+        VALUES ($1, $2, $3, $4, 'confirmed')
         "#,
         Uuid::new_v4(),
         ns.email.as_ref(),
