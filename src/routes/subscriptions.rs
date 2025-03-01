@@ -11,7 +11,7 @@ use actix_web::{
 use chrono::Utc;
 use rand::{distr::Alphanumeric, Rng};
 use serde::Deserialize;
-use sqlx::PgPool;
+use sqlx::{Acquire, PgPool};
 use std::iter;
 use uuid::Uuid;
 
@@ -40,12 +40,16 @@ pub async fn subscribe(
         Ok(ns) => ns,
         Err(_) => return HttpResponse::BadRequest(),
     };
-    let subscriber_id = match insert_subscriber(&ns, &db_pool).await {
+    let mut transaction = match db_pool.begin().await {
+        Ok(t) => t,
+        Err(_) => return HttpResponse::InternalServerError(),
+    };
+    let subscriber_id = match insert_subscriber(&ns, &mut transaction).await {
         Ok(id) => id,
         Err(_) => return HttpResponse::InternalServerError(),
     };
     let subscription_token = generate_subscription_token();
-    if store_token(&db_pool, subscriber_id, &subscription_token)
+    if store_token(&mut transaction, subscriber_id, &subscription_token)
         .await
         .is_err()
     {
@@ -57,25 +61,30 @@ pub async fn subscribe(
     {
         return HttpResponse::InternalServerError();
     }
+    if transaction.commit().await.is_err() {
+        return HttpResponse::InternalServerError();
+    }
     HttpResponse::Ok()
 }
 
 #[tracing::instrument(
     name = "Storing the subscription token for the new subscriber in the database",
-    skip(db_pool, subscription_token)
+    skip(executor, subscription_token)
 )]
 async fn store_token(
-    db_pool: &PgPool,
+    executor: impl Acquire<'_, Database = sqlx::Postgres>,
     subscriber_id: Uuid,
     subscription_token: &str,
 ) -> Result<(), sqlx::Error> {
+    let executor = &mut *(executor.acquire().await?);
+
     sqlx::query!(
         r#"INSERT INTO subscription_tokens (subscriber_id, token)
     VALUES ($1, $2)"#,
         subscriber_id,
         subscription_token
     )
-    .execute(db_pool)
+    .execute(executor)
     .await
     .map_err(|e| {
         tracing::error!("Failed to execute query: {:?}", e);
@@ -132,9 +141,14 @@ impl TryFrom<SubscriptionForm> for NewSubscriber {
 
 #[tracing::instrument(
     name = "Saving new subscriber details in the database",
-    skip(ns, db_pool)
+    skip(ns, executor)
 )]
-async fn insert_subscriber(ns: &NewSubscriber, db_pool: &PgPool) -> Result<Uuid, sqlx::Error> {
+async fn insert_subscriber(
+    ns: &NewSubscriber,
+    executor: impl Acquire<'_, Database = sqlx::Postgres>,
+) -> Result<Uuid, sqlx::Error> {
+    let executor = &mut *(executor.acquire().await?);
+
     let id = Uuid::new_v4();
     sqlx::query!(
         r#"
@@ -146,7 +160,7 @@ async fn insert_subscriber(ns: &NewSubscriber, db_pool: &PgPool) -> Result<Uuid,
         ns.name.as_ref(),
         Utc::now(),
     )
-    .execute(db_pool)
+    .execute(executor)
     .await
     .map_err(|e| {
         tracing::error!("Failed to execute query: {:?}", e);
