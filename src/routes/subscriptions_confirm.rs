@@ -1,3 +1,4 @@
+use crate::domain::SubscriptionToken;
 use actix_web::{
     get,
     web::{Data, Query},
@@ -15,7 +16,11 @@ struct Parameters {
 #[get("/subscriptions/confirm")]
 #[tracing::instrument(name = "Confirming a pending subscriber", skip(db_pool, parameters))]
 pub async fn confirm(db_pool: Data<PgPool>, parameters: Query<Parameters>) -> impl Responder {
-    let id = match get_subscriber_id_from_token(&db_pool, &parameters.token).await {
+    let token = match SubscriptionToken::parse(parameters.token.clone()) {
+        Ok(t) => t,
+        Err(_) => return HttpResponse::BadRequest(),
+    };
+    let id = match get_subscriber_id_from_token(&db_pool, &token).await {
         Ok(id) => match id {
             Some(id) => id,
             None => return HttpResponse::Unauthorized(),
@@ -49,11 +54,11 @@ async fn confirm_subscriber(db_pool: &PgPool, subscriber_id: Uuid) -> Result<(),
 #[tracing::instrument(name = "Get subscriber_id from token", skip(db_pool, token))]
 async fn get_subscriber_id_from_token(
     db_pool: &PgPool,
-    token: &str,
+    token: &SubscriptionToken,
 ) -> Result<Option<Uuid>, sqlx::Error> {
     let id = sqlx::query!(
         "SELECT subscriber_id FROM subscription_tokens WHERE token = $1",
-        token
+        token.as_ref()
     )
     .fetch_optional(db_pool)
     .await

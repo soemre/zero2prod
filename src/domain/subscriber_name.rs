@@ -21,7 +21,7 @@ impl SubscriberName {
         if is_empty || is_too_long || contains_forbidden_chars {
             Err(format!("{} is not a valid subscriber name.", s))
         } else {
-            Ok(Self(s.to_string()))
+            Ok(Self(s))
         }
     }
 }
