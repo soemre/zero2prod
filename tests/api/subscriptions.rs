@@ -136,3 +136,23 @@ async fn subscribe_sends_a_confirmation_email_with_a_link() {
 
     assert_eq!(links.html, links.text);
 }
+
+#[tokio::test]
+async fn subscribe_sends_a_confirmation_email_for_each_request() {
+    // Arrange
+    let app = TestApp::spawn().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+
+    Mock::given(matchers::path("/email"))
+        .and(matchers::method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(2)
+        .mount(&app.email_server)
+        .await;
+
+    // Act
+    app.post_subscriptions(body).await;
+    app.post_subscriptions(body).await;
+
+    // Assert
+}

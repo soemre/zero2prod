@@ -24,7 +24,7 @@ pub async fn confirm(db_pool: Data<PgPool>, parameters: Query<Parameters>) -> im
         Ok(t) => t,
         Err(_) => return HttpResponse::InternalServerError(),
     };
-    let id = match get_subscriber_id_from_token(&mut txn, &token).await {
+    let id = match consume_subscriber_id_from_token(&mut txn, &token).await {
         Ok(id) => match id {
             Some(id) => id,
             None => return HttpResponse::Unauthorized(),
@@ -63,8 +63,10 @@ async fn confirm_subscriber(
     Ok(())
 }
 
-#[tracing::instrument(name = "Get subscriber_id from token", skip(executor, token))]
-async fn get_subscriber_id_from_token(
+/// Returns the `subscriber_id` for the given token by removing the corresponding
+/// token entry.
+#[tracing::instrument(name = "Consume subscriber_id from token", skip(executor, token))]
+async fn consume_subscriber_id_from_token(
     executor: impl Acquire<'_, Database = sqlx::Postgres>,
     token: &SubscriptionToken,
 ) -> Result<Option<Uuid>, sqlx::Error> {

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO subscription_tokens (subscriber_id, token)\n        VALUES ($1, $2)\n        ON CONFLICT (subscriber_id)\n        DO UPDATE\n        SET token = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b1ed0633f4ece2c6f1152f236039fa32aea0538db27de60844c2253cbc3ec7a2"
+}

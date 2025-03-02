@@ -62,6 +62,7 @@ pub async fn subscribe(
     HttpResponse::Ok()
 }
 
+/// Stores the given token. If the user already has a token assigned, overwrites it.
 #[tracing::instrument(
     name = "Storing the subscription token for the new subscriber in the database",
     skip(executor, token)
@@ -74,8 +75,13 @@ async fn store_token(
     let executor = &mut *(executor.acquire().await?);
 
     sqlx::query!(
-        r#"INSERT INTO subscription_tokens (subscriber_id, token)
-    VALUES ($1, $2)"#,
+        r#"
+        INSERT INTO subscription_tokens (subscriber_id, token)
+        VALUES ($1, $2)
+        ON CONFLICT (subscriber_id)
+        DO UPDATE
+        SET token = $2
+        "#,
         subscriber_id,
         token.as_ref()
     )
@@ -130,6 +136,8 @@ impl TryFrom<SubscriptionForm> for NewSubscriber {
     }
 }
 
+/// Inserts a new user with the given information if the user doesn't already exist.
+/// Returns the `Uuid` of the user with the given email.
 #[tracing::instrument(
     name = "Saving new subscriber details in the database",
     skip(ns, executor)
@@ -140,22 +148,29 @@ async fn insert_subscriber(
 ) -> Result<Uuid, sqlx::Error> {
     let executor = &mut *(executor.acquire().await?);
 
-    let id = Uuid::new_v4();
-    sqlx::query!(
-        r#"
-        INSERT INTO subscriptions (id, email, name, subscribed_at, status)
-        VALUES ($1, $2, $3, $4, 'pending_confirmation')
-        "#,
-        id,
-        ns.email.as_ref(),
-        ns.name.as_ref(),
-        Utc::now(),
-    )
-    .execute(executor)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to execute query: {:?}", e);
-        e
-    })?;
+    let id = {
+        let new_id = Uuid::new_v4();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO subscriptions (id, email, name, subscribed_at, status)
+            VALUES ($1, $2, $3, $4, 'pending_confirmation')
+            ON CONFLICT (email) DO UPDATE
+            SET email = EXCLUDED.email
+            RETURNING id
+            "#,
+            new_id,
+            ns.email.as_ref(),
+            ns.name.as_ref(),
+            Utc::now(),
+        )
+        .fetch_one(executor)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to execute query: {:?}", e);
+            e
+        })?
+        .id
+    };
     Ok(id)
 }
