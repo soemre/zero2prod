@@ -38,19 +38,16 @@ pub async fn subscribe(
         Ok(ns) => ns,
         Err(_) => return HttpResponse::BadRequest(),
     };
-    let mut transaction = match db_pool.begin().await {
+    let mut txn = match db_pool.begin().await {
         Ok(t) => t,
         Err(_) => return HttpResponse::InternalServerError(),
     };
-    let subscriber_id = match insert_subscriber(&ns, &mut transaction).await {
+    let subscriber_id = match insert_subscriber(&ns, &mut txn).await {
         Ok(id) => id,
         Err(_) => return HttpResponse::InternalServerError(),
     };
     let token = SubscriptionToken::generate();
-    if store_token(&mut transaction, subscriber_id, &token)
-        .await
-        .is_err()
-    {
+    if store_token(&mut txn, subscriber_id, &token).await.is_err() {
         return HttpResponse::InternalServerError();
     }
     if send_confirmation_email(&email_client, &ns, &base_url.0, &token)
@@ -59,7 +56,7 @@ pub async fn subscribe(
     {
         return HttpResponse::InternalServerError();
     }
-    if transaction.commit().await.is_err() {
+    if txn.commit().await.is_err() {
         return HttpResponse::InternalServerError();
     }
     HttpResponse::Ok()

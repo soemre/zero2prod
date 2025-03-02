@@ -26,7 +26,7 @@ pub struct ConfirmationLinks {
 
 #[allow(dead_code)]
 pub struct TestApp {
-    pub addr: String,
+    pub base_addr: String,
     pub socket_addr: SocketAddr,
     pub db_pool: PgPool,
     pub email_server: MockServer,
@@ -59,14 +59,14 @@ impl TestApp {
         Self::init_db(&config.database).await;
         let app = App::build(&config).expect("Failed to build application.");
         let socket_addr = app.addr();
-        let addr = format!("http://127.0.0.1:{}", socket_addr.port());
+        let base_addr = format!("{}:{}", config.application.base_url, socket_addr.port());
 
         // Run the application as a background task
         tokio::spawn(app.run_until_stopped());
 
         TestApp {
             db_pool: App::get_db_pool(&config.database),
-            addr,
+            base_addr,
             email_server,
             socket_addr,
         }
@@ -122,7 +122,7 @@ impl TestApp {
 
     pub async fn post_subscriptions(&self, body: impl Into<Body>) -> Response {
         Client::new()
-            .post(format!("{}/subscriptions", self.addr))
+            .post(format!("{}/subscriptions", self.base_addr))
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(body)
             .send()
