@@ -166,7 +166,7 @@ async fn insert_subscriber(
     Ok(id)
 }
 
-fn error_chain_fmt(e: &dyn Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+pub fn error_chain_fmt(e: &dyn Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     writeln!(f, "{}\n", e)?;
     let mut e = Some(e);
     let e_iter = std::iter::from_fn(move || {
