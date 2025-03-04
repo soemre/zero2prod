@@ -1,5 +1,6 @@
 use linkify::{LinkFinder, LinkKind};
 use reqwest::{Body, Client, Response, Url};
+use serde::Serialize;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::{env, io, net::SocketAddr, sync::LazyLock};
 use uuid::Uuid;
@@ -130,6 +131,18 @@ impl TestApp {
             .expect(RQST_FAIL)
     }
 
+    pub async fn post_newsletters<T>(&self, json: &T) -> Response
+    where
+        T: Serialize + ?Sized,
+    {
+        Client::new()
+            .post(format!("{}/newsletters", self.base_addr))
+            .json(json)
+            .send()
+            .await
+            .expect(RQST_FAIL)
+    }
+
     /// Extract the confirmation links embedded in the request to the email API.
     pub fn get_confirmation_links(&self, email_request: &Request) -> ConfirmationLinks {
         let body: serde_json::Value = email_request.body_json().unwrap();
@@ -143,6 +156,8 @@ impl TestApp {
 
             // Make sure not to call random APIs on the web
             assert_eq!(url.host_str().unwrap(), "127.0.0.1");
+
+            // Test Harness specific tweaking
             url.set_port(Some(self.socket_addr.port())).unwrap();
             url
         };

@@ -1,7 +1,7 @@
 use crate::{
     config::{DatabaseSettings, Settings},
     email_client::EmailClient,
-    routes,
+    routes::*,
 };
 use actix_web::{dev::Server, web::Data, HttpServer};
 use core::net::SocketAddr;
@@ -52,9 +52,10 @@ impl App {
         let server = HttpServer::new(move || {
             actix_web::App::new()
                 .wrap(TracingLogger::default())
-                .service(routes::health_check)
-                .service(routes::subscribe)
-                .service(routes::confirm)
+                .service(health_check)
+                .service(subscribe)
+                .service(confirm)
+                .service(publish_newsletter)
                 .app_data(Data::clone(&db_pool))
                 .app_data(Data::clone(&email_client))
                 .app_data(Data::clone(&base_url))
