@@ -1,4 +1,4 @@
-use crate::helpers::{ConfirmationLinks, TestApp};
+use crate::helpers::{ConfirmationLinks, TestApp, RQST_FAIL};
 use wiremock::{matchers, Mock, ResponseTemplate};
 
 #[tokio::test]
@@ -114,4 +114,25 @@ async fn create_confirmed_subscriber(app: &TestApp) {
         .unwrap()
         .error_for_status()
         .unwrap();
+}
+
+#[tokio::test]
+async fn requests_missing_authorization_are_rejected() {
+    // Arrange
+    let app = TestApp::spawn().await;
+
+    // Act
+    let resp = reqwest::Client::new()
+        .post(format!("{}/newsletters", app.base_addr))
+        .json(&serde_json::json!({ "title": "Newsletter title", "content": { "text": "Newsletter body as plain text", "html": "<p>Newsletter body as HTML</p>", } }))
+        .send()
+        .await
+        .expect(RQST_FAIL);
+
+    // Assert
+    assert_eq!(401, resp.status().as_u16());
+    assert_eq!(
+        r#"Basic realm="publish""#,
+        resp.headers()["WWW-Authenticate"]
+    )
 }

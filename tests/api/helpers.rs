@@ -12,7 +12,7 @@ use zero2prod::{
 };
 
 const DB_CONNECTION_FAIL: &str = "Failed to connect to Postgres";
-const RQST_FAIL: &'static str = "Failed to execute request.";
+pub const RQST_FAIL: &'static str = "Failed to execute request.";
 
 const LOGGER_NAME: &str = "test";
 const LOGGER_FILTER_LEVEL: &str = "info";
@@ -65,12 +65,14 @@ impl TestApp {
         // Run the application as a background task
         tokio::spawn(app.run_until_stopped());
 
-        TestApp {
+        let test_app = TestApp {
             db_pool: App::get_db_pool(&config.database),
             base_addr,
             email_server,
             socket_addr,
-        }
+        };
+        test_app.add_test_user().await;
+        test_app
     }
 
     fn init_logging() {
@@ -121,6 +123,34 @@ impl TestApp {
         db_pool
     }
 
+    async fn add_test_user(&self) {
+        sqlx::query!(
+            r#"
+            INSERT INTO users (id, username, password)
+            VALUES ($1, $2, $3)
+            "#,
+            Uuid::new_v4(),
+            Uuid::new_v4().to_string(),
+            Uuid::new_v4().to_string(),
+        )
+        .execute(&self.db_pool)
+        .await
+        .expect("Failed to create test users.");
+    }
+
+    pub async fn test_user(&self) -> (String, String) {
+        let r = sqlx::query!(
+            r#"
+        SELECT username, password FROM users LIMIT 1
+        "#
+        )
+        .fetch_one(&self.db_pool)
+        .await
+        .expect("Failed to fetch the test user.");
+
+        (r.username, r.password)
+    }
+
     pub async fn post_subscriptions(&self, body: impl Into<Body>) -> Response {
         Client::new()
             .post(format!("{}/subscriptions", self.base_addr))
@@ -135,8 +165,10 @@ impl TestApp {
     where
         T: Serialize + ?Sized,
     {
+        let (username, password) = self.test_user().await;
         Client::new()
             .post(format!("{}/newsletters", self.base_addr))
+            .basic_auth(username, Some(password))
             .json(json)
             .send()
             .await
