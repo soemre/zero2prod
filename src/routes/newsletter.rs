@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
-use crate::{domain::SubscriberEmail, email_client::EmailClient, routes::error_chain_fmt};
+use crate::{
+    domain::SubscriberEmail, email_client::EmailClient, routes::error_chain_fmt, telemetry,
+};
 use actix_web::{
     http::{header, StatusCode},
     post,
@@ -117,20 +119,27 @@ async fn validate_credentials(
         .context("Unknown username.")
         .map_err(PublishError::AuthError)?;
 
-    let expected_password_hash = PasswordHash::new(expected_password_hash.expose_secret())
-        .context("Failed to parse hash in PHC string format.")?;
-
-    tracing::info_span!("Verify password hash")
-        .in_scope(|| {
-            Argon2::default().verify_password(
-                c.password.expose_secret().as_bytes(),
-                &expected_password_hash,
-            )
-        })
-        .context("Invalid password.")
-        .map_err(PublishError::AuthError)?;
+    telemetry::spawn_blocking_with_tracing(|| {
+        verify_password_hash(expected_password_hash, c.password)
+    })
+    .await
+    .context("Failed to spawn blocking task.")??;
 
     Ok(id)
+}
+
+#[tracing::instrument(name = "Verify password hash", skip(expected, candidate))]
+fn verify_password_hash(
+    expected: SecretString,
+    candidate: SecretString,
+) -> Result<(), PublishError> {
+    let expected = PasswordHash::new(expected.expose_secret())
+        .context("Failed to parse hash in PHC string format.")?;
+
+    Argon2::default()
+        .verify_password(candidate.expose_secret().as_bytes(), &expected)
+        .context("Invalid password.")
+        .map_err(PublishError::AuthError)
 }
 
 struct ConfirmedSubscriber {
