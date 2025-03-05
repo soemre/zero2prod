@@ -1,4 +1,4 @@
-use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
+use argon2::{password_hash::SaltString, Algorithm, Argon2, Params, PasswordHasher, Version};
 use linkify::{LinkFinder, LinkKind};
 use reqwest::{Body, Client, Response, Url};
 use serde::Serialize;
@@ -44,10 +44,17 @@ impl TestUser {
     pub async fn store(&self, pool: &PgPool) {
         let password_hash = {
             let salt = SaltString::generate(rand::thread_rng());
-            Argon2::default()
-                .hash_password(self.password.as_bytes(), &salt)
-                .unwrap()
-                .to_string()
+
+            // Eleminate the timing difference that occurs while hashing the password in tests.
+            // Need to specify this manually since we are directlly querying the database.
+            Argon2::new(
+                Algorithm::Argon2id,
+                Version::V0x13,
+                Params::new(15000, 2, 1, None).unwrap(),
+            )
+            .hash_password(self.password.as_bytes(), &salt)
+            .unwrap()
+            .to_string()
         };
         sqlx::query!(
             r#"

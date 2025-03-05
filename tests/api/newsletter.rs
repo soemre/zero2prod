@@ -1,4 +1,5 @@
 use crate::helpers::{ConfirmationLinks, TestApp, RQST_FAIL};
+use uuid::Uuid;
 use wiremock::{matchers, Mock, ResponseTemplate};
 
 #[tokio::test]
@@ -124,6 +125,58 @@ async fn requests_missing_authorization_are_rejected() {
     // Act
     let resp = reqwest::Client::new()
         .post(format!("{}/newsletters", app.base_addr))
+        .json(&serde_json::json!({ "title": "Newsletter title", "content": { "text": "Newsletter body as plain text", "html": "<p>Newsletter body as HTML</p>", } }))
+        .send()
+        .await
+        .expect(RQST_FAIL);
+
+    // Assert
+    assert_eq!(401, resp.status().as_u16());
+    assert_eq!(
+        r#"Basic realm="publish""#,
+        resp.headers()["WWW-Authenticate"]
+    )
+}
+
+#[tokio::test]
+async fn non_existing_user_is_rejected() {
+    // Arrange
+    let app = TestApp::spawn().await;
+
+    // Arrange - Random credentials
+    let username = Uuid::new_v4().to_string();
+    let password = Uuid::new_v4().to_string();
+
+    // Act
+    let resp = reqwest::Client::new()
+        .post(format!("{}/newsletters", app.base_addr))
+        .basic_auth(username, Some(password))
+        .json(&serde_json::json!({ "title": "Newsletter title", "content": { "text": "Newsletter body as plain text", "html": "<p>Newsletter body as HTML</p>", } }))
+        .send()
+        .await
+        .expect(RQST_FAIL);
+
+    // Assert
+    assert_eq!(401, resp.status().as_u16());
+    assert_eq!(
+        r#"Basic realm="publish""#,
+        resp.headers()["WWW-Authenticate"]
+    )
+}
+
+#[tokio::test]
+async fn invalid_password_is_rejected() {
+    // Arrange
+    let app = TestApp::spawn().await;
+
+    // Arrange - Random credentials
+    let username = app.test_user.username;
+    let password = Uuid::new_v4().to_string();
+
+    // Act
+    let resp = reqwest::Client::new()
+        .post(format!("{}/newsletters", app.base_addr))
+        .basic_auth(username, Some(password))
         .json(&serde_json::json!({ "title": "Newsletter title", "content": { "text": "Newsletter body as plain text", "html": "<p>Newsletter body as HTML</p>", } }))
         .send()
         .await

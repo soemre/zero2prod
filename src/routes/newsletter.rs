@@ -18,6 +18,8 @@ use sqlx::{PgExecutor, PgPool};
 use std::fmt::Debug;
 use uuid::Uuid;
 
+const DUMMY_PASSWORD_PHC: &str = "$argon2id$v=19$m=15000,t=2,p=1$gZiV/M1gPc22ElAH/Jh1Hw$CWOrkoo7oJBQ/iyh7uJ0LO2aLEfrHwTWllSAxT0zRno";
+
 #[derive(Deserialize)]
 struct BodyData {
     title: String,
@@ -114,10 +116,10 @@ async fn validate_credentials(
     c: Credentials,
     executor: impl '_ + PgExecutor<'_>,
 ) -> Result<Uuid, PublishError> {
-    let (id, expected_password_hash) = get_stored_credentials(&c.username, executor)
-        .await?
-        .context("Unknown username.")
-        .map_err(PublishError::AuthError)?;
+    let (id, expected_password_hash) = get_stored_credentials(&c.username, executor).await?.map_or(
+        (None, SecretString::from(DUMMY_PASSWORD_PHC)),
+        |(id, hash)| (Some(id), hash),
+    );
 
     telemetry::spawn_blocking_with_tracing(|| {
         verify_password_hash(expected_password_hash, c.password)
@@ -125,7 +127,7 @@ async fn validate_credentials(
     .await
     .context("Failed to spawn blocking task.")??;
 
-    Ok(id)
+    id.ok_or_else(|| PublishError::AuthError(anyhow::anyhow!("Unknown username.")))
 }
 
 #[tracing::instrument(name = "Verify password hash", skip(expected, candidate))]
