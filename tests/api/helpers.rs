@@ -1,3 +1,4 @@
+use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
 use linkify::{LinkFinder, LinkKind};
 use reqwest::{Body, Client, Response, Url};
 use serde::Serialize;
@@ -25,12 +26,51 @@ pub struct ConfirmationLinks {
     pub text: Url,
 }
 
+pub struct TestUser {
+    pub id: Uuid,
+    pub username: String,
+    pub password: String,
+}
+
+impl TestUser {
+    pub fn generate() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            username: Uuid::new_v4().to_string(),
+            password: Uuid::new_v4().to_string(),
+        }
+    }
+
+    pub async fn store(&self, pool: &PgPool) {
+        let password_hash = {
+            let salt = SaltString::generate(rand::thread_rng());
+            Argon2::default()
+                .hash_password(self.password.as_bytes(), &salt)
+                .unwrap()
+                .to_string()
+        };
+        sqlx::query!(
+            r#"
+            INSERT INTO users (id, username, password_hash)
+            VALUES ($1, $2, $3)
+            "#,
+            self.id,
+            self.username,
+            password_hash
+        )
+        .execute(pool)
+        .await
+        .expect("Failed to store test users.");
+    }
+}
+
 #[allow(dead_code)]
 pub struct TestApp {
     pub base_addr: String,
     pub socket_addr: SocketAddr,
     pub db_pool: PgPool,
     pub email_server: MockServer,
+    pub test_user: TestUser,
 }
 
 impl TestApp {
@@ -70,8 +110,9 @@ impl TestApp {
             base_addr,
             email_server,
             socket_addr,
+            test_user: TestUser::generate(),
         };
-        test_app.add_test_user().await;
+        test_app.test_user.store(&test_app.db_pool).await;
         test_app
     }
 
@@ -123,34 +164,6 @@ impl TestApp {
         db_pool
     }
 
-    async fn add_test_user(&self) {
-        sqlx::query!(
-            r#"
-            INSERT INTO users (id, username, password)
-            VALUES ($1, $2, $3)
-            "#,
-            Uuid::new_v4(),
-            Uuid::new_v4().to_string(),
-            Uuid::new_v4().to_string(),
-        )
-        .execute(&self.db_pool)
-        .await
-        .expect("Failed to create test users.");
-    }
-
-    pub async fn test_user(&self) -> (String, String) {
-        let r = sqlx::query!(
-            r#"
-        SELECT username, password FROM users LIMIT 1
-        "#
-        )
-        .fetch_one(&self.db_pool)
-        .await
-        .expect("Failed to fetch the test user.");
-
-        (r.username, r.password)
-    }
-
     pub async fn post_subscriptions(&self, body: impl Into<Body>) -> Response {
         Client::new()
             .post(format!("{}/subscriptions", self.base_addr))
@@ -165,10 +178,9 @@ impl TestApp {
     where
         T: Serialize + ?Sized,
     {
-        let (username, password) = self.test_user().await;
         Client::new()
             .post(format!("{}/newsletters", self.base_addr))
-            .basic_auth(username, Some(password))
+            .basic_auth(&self.test_user.username, Some(&self.test_user.password))
             .json(json)
             .send()
             .await

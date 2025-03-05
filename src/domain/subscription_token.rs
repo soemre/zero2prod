@@ -1,7 +1,4 @@
-use rand::{
-    distr::{Alphanumeric, SampleString},
-    Rng,
-};
+use rand::{distributions, Rng};
 
 const ALLOWED_CHARS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ\
 abcdefghijklmnopqrstuvwxyz\
@@ -28,11 +25,15 @@ impl SubscriptionToken {
 
     /// Generate a random 25-characters-long case-sensitive subscription token.
     pub fn generate() -> Self {
-        Self::generate_with_rng(&mut rand::rng())
+        Self::generate_with_rng(&mut rand::thread_rng())
     }
 
     fn generate_with_rng<R: Rng + ?Sized>(rng: &mut R) -> Self {
-        let raw = Alphanumeric.sample_string(rng, TOKEN_LEN);
+        let raw = rng
+            .sample_iter(distributions::Alphanumeric)
+            .map(char::from)
+            .take(TOKEN_LEN)
+            .collect();
         SubscriptionToken(raw)
     }
 }
@@ -66,15 +67,23 @@ mod tests {
 
     #[test]
     fn a_token_longer_than_expected_is_rejected() {
-        let token =
-            Alphanumeric.sample_string(&mut rand::rng(), TOKEN_LEN + (1..10).fake::<usize>());
+        let rng = rand::thread_rng();
+        let token = rng
+            .sample_iter(distributions::Alphanumeric)
+            .map(char::from)
+            .take(TOKEN_LEN + (1..10).fake::<usize>())
+            .collect();
         assert_err!(SubscriptionToken::parse(token));
     }
 
     #[test]
     fn a_token_shorter_than_expected_is_rejected() {
-        let token =
-            Alphanumeric.sample_string(&mut rand::rng(), TOKEN_LEN - (1..25).fake::<usize>());
+        let rng = rand::thread_rng();
+        let token = rng
+            .sample_iter(distributions::Alphanumeric)
+            .map(char::from)
+            .take(TOKEN_LEN - (1..25).fake::<usize>())
+            .collect();
         assert_err!(SubscriptionToken::parse(token));
     }
 

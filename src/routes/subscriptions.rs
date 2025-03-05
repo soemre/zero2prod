@@ -12,7 +12,7 @@ use actix_web::{
 use anyhow::Context;
 use chrono::Utc;
 use serde::Deserialize;
-use sqlx::{Acquire, PgPool};
+use sqlx::{PgExecutor, PgPool};
 use std::{
     error::Error,
     fmt::{Debug, Display},
@@ -45,11 +45,11 @@ pub async fn subscribe(
         .begin()
         .await
         .context("Failed to acquire a Postgres connection from the pool")?;
-    let subscriber_id = insert_subscriber(&ns, &mut txn)
+    let subscriber_id = insert_subscriber(&ns, txn.as_mut())
         .await
         .context("Failed to insert new subscriber in the database.")?;
     let token = SubscriptionToken::generate();
-    store_token(&mut txn, subscriber_id, &token)
+    store_token(txn.as_mut(), subscriber_id, &token)
         .await
         .context("Failed to store the confirmation token for a new subscriber.")?;
     send_confirmation_email(&email_client, &ns, &base_url.0, &token)
@@ -67,12 +67,10 @@ pub async fn subscribe(
     skip(executor, token)
 )]
 async fn store_token(
-    executor: impl Acquire<'_, Database = sqlx::Postgres>,
+    executor: impl '_ + PgExecutor<'_>,
     subscriber_id: Uuid,
     token: &SubscriptionToken,
 ) -> Result<(), StoreTokenError> {
-    let executor = &mut *(executor.acquire().await?);
-
     sqlx::query!(
         r#"
         INSERT INTO subscription_tokens (subscriber_id, token)
@@ -139,10 +137,8 @@ impl TryFrom<SubscriptionForm> for NewSubscriber {
 )]
 async fn insert_subscriber(
     ns: &NewSubscriber,
-    executor: impl Acquire<'_, Database = sqlx::Postgres>,
+    executor: impl '_ + PgExecutor<'_>,
 ) -> Result<Uuid, sqlx::Error> {
-    let executor = &mut *(executor.acquire().await?);
-
     let id = {
         let new_id = Uuid::new_v4();
 

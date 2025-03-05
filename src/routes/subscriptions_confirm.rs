@@ -7,7 +7,7 @@ use actix_web::{
 };
 use anyhow::Context;
 use serde::Deserialize;
-use sqlx::{Acquire, PgPool};
+use sqlx::{PgExecutor, PgPool};
 use std::fmt::Debug;
 use uuid::Uuid;
 
@@ -28,11 +28,11 @@ pub async fn confirm(
         .begin()
         .await
         .context("Failed to acquire a Postgres connection from the pool")?;
-    let id = consume_subscriber_id_from_token(&mut txn, &token)
+    let id = consume_subscriber_id_from_token(txn.as_mut(), &token)
         .await
         .context("Failed to attempt token consumption for the specified user.")?
         .ok_or(ConfirmSubscriberError::UnknownToken)?;
-    confirm_subscriber(&mut txn, id)
+    confirm_subscriber(txn.as_mut(), id)
         .await
         .context("Failed to confirm the user.")?;
     txn.commit()
@@ -44,11 +44,9 @@ pub async fn confirm(
 
 #[tracing::instrument(name = "Mark subscriber as confirmed", skip(subscriber_id, executor))]
 async fn confirm_subscriber(
-    executor: impl Acquire<'_, Database = sqlx::Postgres>,
+    executor: impl '_ + PgExecutor<'_>,
     subscriber_id: Uuid,
 ) -> Result<(), sqlx::Error> {
-    let executor = &mut *(executor.acquire().await?);
-
     sqlx::query!(
         "UPDATE subscriptions SET status = 'confirmed' WHERE id = $1",
         subscriber_id
@@ -63,11 +61,9 @@ async fn confirm_subscriber(
 /// token entry.
 #[tracing::instrument(name = "Consume subscriber_id from token", skip(executor, token))]
 async fn consume_subscriber_id_from_token(
-    executor: impl Acquire<'_, Database = sqlx::Postgres>,
+    executor: impl '_ + PgExecutor<'_>,
     token: &SubscriptionToken,
 ) -> Result<Option<Uuid>, sqlx::Error> {
-    let executor = &mut *(executor.acquire().await?);
-
     let id = sqlx::query!(
         "DELETE FROM subscription_tokens WHERE token = $1 RETURNING subscriber_id",
         token.as_ref()

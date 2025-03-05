@@ -8,10 +8,11 @@ use actix_web::{
     HttpRequest, HttpResponse, Responder, ResponseError,
 };
 use anyhow::Context;
+use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use base64::Engine;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
-use sqlx::{Acquire, PgPool};
+use sqlx::{PgExecutor, PgPool};
 use std::fmt::Debug;
 use uuid::Uuid;
 
@@ -106,41 +107,61 @@ fn basic_auth(headers: &header::HeaderMap) -> Result<Credentials, anyhow::Error>
     })
 }
 
+#[tracing::instrument(name = "Validate credentials", skip(c, executor))]
 async fn validate_credentials(
     c: Credentials,
-    executor: impl Acquire<'_, Database = sqlx::Postgres>,
+    executor: impl '_ + PgExecutor<'_>,
 ) -> Result<Uuid, PublishError> {
-    let executor = &mut *(executor
-        .acquire()
-        .await
-        .context("Failed acquire a connection to validate auth credentials.")?);
+    let (id, expected_password_hash) = get_stored_credentials(&c.username, executor)
+        .await?
+        .context("Unknown username.")
+        .map_err(PublishError::AuthError)?;
 
-    let id = sqlx::query!(
-        r#"
-        SELECT id FROM users
-        WHERE username = $1 AND password = $2
-        "#,
-        c.username,
-        c.password.expose_secret()
-    )
-    .fetch_optional(executor)
-    .await
-    .context("Failed to perform a query to validate auth credentials.")?;
+    let expected_password_hash = PasswordHash::new(expected_password_hash.expose_secret())
+        .context("Failed to parse hash in PHC string format.")?;
 
-    id.map(|r| r.id)
-        .context("Invalid username or password.")
-        .map_err(PublishError::AuthError)
+    tracing::info_span!("Verify password hash")
+        .in_scope(|| {
+            Argon2::default().verify_password(
+                c.password.expose_secret().as_bytes(),
+                &expected_password_hash,
+            )
+        })
+        .context("Invalid password.")
+        .map_err(PublishError::AuthError)?;
+
+    Ok(id)
 }
 
 struct ConfirmedSubscriber {
     email: SubscriberEmail,
 }
 
+#[tracing::instrument(name = "Get stored credentials", skip(username, executor))]
+async fn get_stored_credentials(
+    username: &str,
+    executor: impl '_ + PgExecutor<'_>,
+) -> Result<Option<(Uuid, SecretString)>, anyhow::Error> {
+    let r = sqlx::query!(
+        r#"
+            SELECT id, password_hash 
+            FROM users
+            WHERE username = $1 
+        "#,
+        username
+    )
+    .fetch_optional(executor)
+    .await
+    .context("Failed to perform a query to validate auth credentials.")?
+    .map(|r| (r.id, SecretString::from(r.password_hash)));
+
+    Ok(r)
+}
+
 #[tracing::instrument(name = "Get confirmed subscribers", skip(executor))]
 async fn get_confirmed_subscribers(
-    executor: impl Acquire<'_, Database = sqlx::Postgres>,
+    executor: impl '_ + PgExecutor<'_>,
 ) -> Result<Vec<Result<ConfirmedSubscriber, anyhow::Error>>, anyhow::Error> {
-    let executor = &mut *(executor.acquire().await?);
     let rows = sqlx::query!(
         r#"
         SELECT email FROM subscriptions
