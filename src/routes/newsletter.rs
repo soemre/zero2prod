@@ -1,7 +1,10 @@
 #![allow(dead_code)]
 
 use crate::{
-    domain::SubscriberEmail, email_client::EmailClient, routes::error_chain_fmt, telemetry,
+    auth::{self, AuthError, Credentials},
+    domain::SubscriberEmail,
+    email_client::EmailClient,
+    routes::error_chain_fmt,
 };
 use actix_web::{
     http::{header, StatusCode},
@@ -10,15 +13,11 @@ use actix_web::{
     HttpRequest, HttpResponse, Responder, ResponseError,
 };
 use anyhow::Context;
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use base64::Engine;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
 use sqlx::{PgExecutor, PgPool};
 use std::fmt::Debug;
-use uuid::Uuid;
-
-const DUMMY_PASSWORD_PHC: &str = "$argon2id$v=19$m=15000,t=2,p=1$gZiV/M1gPc22ElAH/Jh1Hw$CWOrkoo7oJBQ/iyh7uJ0LO2aLEfrHwTWllSAxT0zRno";
 
 #[derive(Deserialize)]
 struct BodyData {
@@ -49,7 +48,12 @@ pub async fn publish_newsletter(
 ) -> Result<impl Responder, PublishError> {
     let credentials = basic_auth(req.headers()).map_err(PublishError::AuthError)?;
     tracing::Span::current().record("username", tracing::field::display(&credentials.username));
-    let user_id = validate_credentials(credentials, &**pool).await?;
+    let user_id = auth::validate_credentials(credentials, pool.as_ref())
+        .await
+        .map_err(|e| match e {
+            AuthError::InvalidCredentials(_) => PublishError::AuthError(e.into()),
+            AuthError::UnexpectedError(_) => PublishError::UnexpectedError(e.into()),
+        })?;
     tracing::Span::current().record("user_id", tracing::field::display(&user_id));
     let subscribers = get_confirmed_subscribers(&**pool).await?;
     for s in subscribers {
@@ -70,11 +74,6 @@ pub async fn publish_newsletter(
         }
     }
     Ok(HttpResponse::Ok())
-}
-
-struct Credentials {
-    username: String,
-    password: SecretString,
 }
 
 fn basic_auth(headers: &header::HeaderMap) -> Result<Credentials, anyhow::Error> {
@@ -111,62 +110,8 @@ fn basic_auth(headers: &header::HeaderMap) -> Result<Credentials, anyhow::Error>
     })
 }
 
-#[tracing::instrument(name = "Validate credentials", skip(c, executor))]
-async fn validate_credentials(
-    c: Credentials,
-    executor: impl '_ + PgExecutor<'_>,
-) -> Result<Uuid, PublishError> {
-    let (id, expected_password_hash) = get_stored_credentials(&c.username, executor).await?.map_or(
-        (None, SecretString::from(DUMMY_PASSWORD_PHC)),
-        |(id, hash)| (Some(id), hash),
-    );
-
-    telemetry::spawn_blocking_with_tracing(|| {
-        verify_password_hash(expected_password_hash, c.password)
-    })
-    .await
-    .context("Failed to spawn blocking task.")??;
-
-    id.ok_or_else(|| PublishError::AuthError(anyhow::anyhow!("Unknown username.")))
-}
-
-#[tracing::instrument(name = "Verify password hash", skip(expected, candidate))]
-fn verify_password_hash(
-    expected: SecretString,
-    candidate: SecretString,
-) -> Result<(), PublishError> {
-    let expected = PasswordHash::new(expected.expose_secret())
-        .context("Failed to parse hash in PHC string format.")?;
-
-    Argon2::default()
-        .verify_password(candidate.expose_secret().as_bytes(), &expected)
-        .context("Invalid password.")
-        .map_err(PublishError::AuthError)
-}
-
 struct ConfirmedSubscriber {
     email: SubscriberEmail,
-}
-
-#[tracing::instrument(name = "Get stored credentials", skip(username, executor))]
-async fn get_stored_credentials(
-    username: &str,
-    executor: impl '_ + PgExecutor<'_>,
-) -> Result<Option<(Uuid, SecretString)>, anyhow::Error> {
-    let r = sqlx::query!(
-        r#"
-            SELECT id, password_hash 
-            FROM users
-            WHERE username = $1 
-        "#,
-        username
-    )
-    .fetch_optional(executor)
-    .await
-    .context("Failed to perform a query to validate auth credentials.")?
-    .map(|r| (r.id, SecretString::from(r.password_hash)));
-
-    Ok(r)
 }
 
 #[tracing::instrument(name = "Get confirmed subscribers", skip(executor))]

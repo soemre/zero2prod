@@ -1,0 +1,79 @@
+use crate::{routes::error_chain_fmt, telemetry};
+use anyhow::Context;
+use argon2::{Argon2, PasswordHash, PasswordVerifier};
+use secrecy::{ExposeSecret, SecretString};
+use sqlx::PgExecutor;
+use std::fmt::Debug;
+use uuid::Uuid;
+
+#[derive(thiserror::Error)]
+pub enum AuthError {
+    #[error("Invalid credentials.")]
+    InvalidCredentials(#[source] anyhow::Error),
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
+}
+
+impl Debug for AuthError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+pub struct Credentials {
+    pub username: String,
+    pub password: SecretString,
+}
+
+#[tracing::instrument(name = "Validate credentials", skip(c, executor))]
+pub async fn validate_credentials(
+    c: Credentials,
+    executor: impl '_ + PgExecutor<'_>,
+) -> Result<Uuid, AuthError> {
+    const DUMMY_PASSWORD_PHC: &str = "$argon2id$v=19$m=15000,t=2,p=1$gZiV/M1gPc22ElAH/Jh1Hw$CWOrkoo7oJBQ/iyh7uJ0LO2aLEfrHwTWllSAxT0zRno";
+
+    let (id, expected_password_hash) = get_stored_credentials(&c.username, executor).await?.map_or(
+        (None, SecretString::from(DUMMY_PASSWORD_PHC)),
+        |(id, hash)| (Some(id), hash),
+    );
+
+    telemetry::spawn_blocking_with_tracing(|| {
+        verify_password_hash(expected_password_hash, c.password)
+    })
+    .await
+    .context("Failed to spawn blocking task.")??;
+
+    id.ok_or_else(|| AuthError::InvalidCredentials(anyhow::anyhow!("Unknown username.")))
+}
+
+#[tracing::instrument(name = "Verify password hash", skip(expected, candidate))]
+fn verify_password_hash(expected: SecretString, candidate: SecretString) -> Result<(), AuthError> {
+    let expected = PasswordHash::new(expected.expose_secret())
+        .context("Failed to parse hash in PHC string format.")?;
+
+    Argon2::default()
+        .verify_password(candidate.expose_secret().as_bytes(), &expected)
+        .context("Invalid password.")
+        .map_err(AuthError::InvalidCredentials)
+}
+
+#[tracing::instrument(name = "Get stored credentials", skip(username, executor))]
+async fn get_stored_credentials(
+    username: &str,
+    executor: impl '_ + PgExecutor<'_>,
+) -> Result<Option<(Uuid, SecretString)>, anyhow::Error> {
+    let r = sqlx::query!(
+        r#"
+            SELECT id, password_hash 
+            FROM users
+            WHERE username = $1 
+        "#,
+        username
+    )
+    .fetch_optional(executor)
+    .await
+    .context("Failed to perform a query to validate auth credentials.")?
+    .map(|r| (r.id, SecretString::from(r.password_hash)));
+
+    Ok(r)
+}
