@@ -32,9 +32,17 @@ services:
       - key: APP__APPLICATION__BASE_URL
         value: ${APP_URL}
         scope: RUN_TIME
+      - key: APP__REDIS_URI
+        value: ${session-store.REDIS_URL}
+        scope: RUN_TIME
 databases:
   - name: newsletter
     engine: PG
     version: "14"
+    num_nodes: 1
+    size: db-s-dev-database
+  - name: session-store
+    engine: REDIS
+    version: "7"
     num_nodes: 1
     size: db-s-dev-database

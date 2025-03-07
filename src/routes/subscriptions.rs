@@ -1,7 +1,7 @@
 use crate::{
+    app::AppBaseUrl,
     domain::{NewSubscriber, SubscriberEmail, SubscriberName, SubscriptionToken},
     email_client::EmailClient,
-    startup::AppBaseUrl,
 };
 use actix_web::{
     http::StatusCode,

@@ -3,12 +3,16 @@ use crate::{
     email_client::EmailClient,
     routes::*,
 };
+use actix_session::{
+    storage::{RedisSessionStore, SessionStore},
+    SessionMiddleware,
+};
 use actix_web::{cookie::Key, dev::Server, web::Data, HttpServer};
 use actix_web_flash_messages::{storage::CookieMessageStore, FlashMessagesFramework};
 use core::net::SocketAddr;
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
-use std::{io::Result, net::TcpListener};
+use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
 #[derive(Clone)]
@@ -20,7 +24,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn build(config: &Settings) -> Result<Self> {
+    pub async fn build(config: &Settings) -> anyhow::Result<Self> {
         // create the app dependencies
         let listener =
             TcpListener::bind((config.application.host.clone(), config.application.port))?;
@@ -36,10 +40,17 @@ impl App {
         };
         let base_url = AppBaseUrl(config.application.base_url.clone());
         let hmac_secret = config.application.hmac_secret.clone();
+        let session_store = RedisSessionStore::new(config.redis_uri.expose_secret()).await?;
 
         // create the app runner
-        let server =
-            Self::get_server_runner(listener, db_conn, email_client, base_url, hmac_secret)?;
+        let server = Self::get_server_runner(
+            listener,
+            db_conn,
+            email_client,
+            base_url,
+            hmac_secret,
+            session_store,
+        )?;
 
         Ok(Self {
             server,
@@ -53,26 +64,31 @@ impl App {
         email_client: EmailClient,
         base_url: AppBaseUrl,
         hmac_secret: SecretString,
-    ) -> Result<Server> {
+        session_store: impl SessionStore + Send + Clone + 'static,
+    ) -> anyhow::Result<Server> {
         let db_pool = Data::new(db_pool);
         let email_client = Data::new(email_client);
         let base_url = Data::new(base_url);
+        let secret_key = Key::from(hmac_secret.expose_secret().as_bytes());
         let message_framework = {
-            let store =
-                CookieMessageStore::builder(Key::from(hmac_secret.expose_secret().as_bytes()))
-                    .build();
+            let store = CookieMessageStore::builder(secret_key.clone()).build();
             FlashMessagesFramework::builder(store).build()
         };
         let hmac_secret = Data::new(HmacSecret(hmac_secret));
         let server = HttpServer::new(move || {
             actix_web::App::new()
                 .wrap(message_framework.clone())
+                .wrap(SessionMiddleware::new(
+                    session_store.clone(),
+                    secret_key.clone(),
+                ))
                 .wrap(TracingLogger::default())
                 .service(health_check)
                 .service(subscribe)
                 .service(confirm)
                 .service(publish_newsletter)
                 .service(home)
+                .service(admin_dashboard)
                 .service(login_form)
                 .service(login)
                 .app_data(Data::clone(&db_pool))
@@ -94,8 +110,9 @@ impl App {
         PgPool::connect_lazy_with(config.connect_options())
     }
 
-    pub async fn run_until_stopped(self) -> Result<()> {
-        self.server.await
+    pub async fn run_until_stopped(self) -> anyhow::Result<()> {
+        self.server.await?;
+        Ok(())
     }
 }
 

@@ -7,8 +7,8 @@ use std::{env, io, net::SocketAddr, sync::LazyLock};
 use uuid::Uuid;
 use wiremock::{MockServer, Request};
 use zero2prod::{
+    app::App,
     config::{self, DatabaseSettings},
-    startup::App,
     telemetry,
 };
 
@@ -106,7 +106,9 @@ impl TestApp {
 
         // Create the database and application
         Self::init_db(&config.database).await;
-        let app = App::build(&config).expect("Failed to build application.");
+        let app = App::build(&config)
+            .await
+            .expect("Failed to build application.");
         let socket_addr = app.addr();
         let base_addr = format!("{}:{}", config.application.base_url, socket_addr.port());
         let api_client = reqwest::Client::builder()
@@ -232,7 +234,6 @@ impl TestApp {
     {
         self.api_client
             .post(format!("{}/login", self.base_addr))
-            .basic_auth(&self.test_user.username, Some(&self.test_user.password))
             .form(body)
             .send()
             .await
@@ -248,6 +249,18 @@ impl TestApp {
             .text()
             .await
             .unwrap()
+    }
+
+    pub async fn get_admin_dashboard(&self) -> Response {
+        self.api_client
+            .get(format!("{}/admin/dashboard", self.base_addr))
+            .send()
+            .await
+            .expect(RQST_FAIL)
+    }
+
+    pub async fn get_admin_dashboard_html(&self) -> String {
+        self.get_admin_dashboard().await.text().await.unwrap()
     }
 }
 
