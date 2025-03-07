@@ -1,6 +1,6 @@
 use argon2::{password_hash::SaltString, Algorithm, Argon2, Params, PasswordHasher, Version};
 use linkify::{LinkFinder, LinkKind};
-use reqwest::{Body, Client, Response, Url};
+use reqwest::{Body, Response, Url};
 use serde::Serialize;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::{env, io, net::SocketAddr, sync::LazyLock};
@@ -78,6 +78,7 @@ pub struct TestApp {
     pub db_pool: PgPool,
     pub email_server: MockServer,
     pub test_user: TestUser,
+    pub api_client: reqwest::Client,
 }
 
 impl TestApp {
@@ -108,6 +109,11 @@ impl TestApp {
         let app = App::build(&config).expect("Failed to build application.");
         let socket_addr = app.addr();
         let base_addr = format!("{}:{}", config.application.base_url, socket_addr.port());
+        let api_client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .cookie_store(true)
+            .build()
+            .unwrap();
 
         // Run the application as a background task
         tokio::spawn(app.run_until_stopped());
@@ -118,6 +124,7 @@ impl TestApp {
             email_server,
             socket_addr,
             test_user: TestUser::generate(),
+            api_client,
         };
         test_app.test_user.store(&test_app.db_pool).await;
         test_app
@@ -172,7 +179,7 @@ impl TestApp {
     }
 
     pub async fn post_subscriptions(&self, body: impl Into<Body>) -> Response {
-        Client::new()
+        self.api_client
             .post(format!("{}/subscriptions", self.base_addr))
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(body)
@@ -185,7 +192,7 @@ impl TestApp {
     where
         T: Serialize + ?Sized,
     {
-        Client::new()
+        self.api_client
             .post(format!("{}/newsletters", self.base_addr))
             .basic_auth(&self.test_user.username, Some(&self.test_user.password))
             .json(json)
@@ -218,4 +225,33 @@ impl TestApp {
 
         ConfirmationLinks { html, text }
     }
+
+    pub async fn post_login<T>(&self, body: &T) -> Response
+    where
+        T: serde::Serialize + ?Sized,
+    {
+        self.api_client
+            .post(format!("{}/login", self.base_addr))
+            .basic_auth(&self.test_user.username, Some(&self.test_user.password))
+            .form(body)
+            .send()
+            .await
+            .expect(RQST_FAIL)
+    }
+
+    pub async fn get_login_html(&self) -> String {
+        self.api_client
+            .get(format!("{}/login", self.base_addr))
+            .send()
+            .await
+            .expect(RQST_FAIL)
+            .text()
+            .await
+            .unwrap()
+    }
+}
+
+pub fn assert_redirecting(resp: &Response, location: &str) {
+    assert_eq!(303, resp.status().as_u16());
+    assert_eq!(location, resp.headers().get("Location").unwrap());
 }

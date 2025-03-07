@@ -1,16 +1,14 @@
-use actix_web::{get, http::header::ContentType, web, HttpResponse, Responder};
-
-#[derive(serde::Deserialize)]
-struct QueryParams {
-    error: Option<String>,
-}
+use actix_web::{get, http::header::ContentType, HttpResponse, Responder};
+use actix_web_flash_messages::{IncomingFlashMessages, Level};
+use std::fmt::Write;
 
 #[get("/login")]
-pub async fn login_form(query: web::Query<QueryParams>) -> impl Responder {
-    let error_html = match query.0.error {
-        Some(e) => format!("<p><i>{e}</i></p>"),
-        None => "".to_string(),
-    };
+pub async fn login_form(flash_messages: IncomingFlashMessages) -> impl Responder {
+    let mut error_html = String::new();
+    for m in flash_messages.iter().filter(|m| m.level() == Level::Error) {
+        let m = htmlescape::encode_minimal(m.content());
+        writeln!(error_html, "<p><i>{}</i></p>", m).unwrap();
+    }
     HttpResponse::Ok()
         .content_type(ContentType::html())
         .body(format!(
