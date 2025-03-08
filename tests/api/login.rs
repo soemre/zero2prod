@@ -13,7 +13,7 @@ async fn an_error_flash_message_is_set_on_failure() {
     let resp = app.post_login(&body).await;
 
     // Assert
-    helpers::assert_redirecting(&resp, "/login");
+    helpers::assert_redirects_to(&resp, "/login");
 
     // Act 2: Follow the redirect
     let html = app.get_login_html().await;
@@ -41,7 +41,7 @@ async fn redirect_to_admin_dashboard_after_login_success() {
     let resp = app.post_login(&body).await;
 
     // Assert
-    helpers::assert_redirecting(&resp, "/admin/dashboard");
+    helpers::assert_redirects_to(&resp, "/admin/dashboard");
 
     // Act 2: Follow the redirect
     let html = app.get_admin_dashboard_html().await;

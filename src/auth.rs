@@ -1,6 +1,9 @@
-use crate::{routes::error_chain_fmt, telemetry};
+use crate::{domain::ValidPassword, routes::error_chain_fmt, telemetry};
 use anyhow::Context;
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
+use argon2::{
+    password_hash::SaltString, Algorithm, Argon2, Params, PasswordHash, PasswordHasher,
+    PasswordVerifier, Version,
+};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgExecutor;
 use std::fmt::Debug;
@@ -76,4 +79,44 @@ async fn get_stored_credentials(
     .map(|r| (r.id, SecretString::from(r.password_hash)));
 
     Ok(r)
+}
+
+#[tracing::instrument(name = "Change password", skip(password, executor))]
+pub async fn change_password(
+    user_id: Uuid,
+    password: ValidPassword,
+    executor: impl '_ + PgExecutor<'_>,
+) -> anyhow::Result<()> {
+    let password_hash = telemetry::spawn_blocking_with_tracing(|| compute_password_hash(password))
+        .await?
+        .context("Failed to hash password")?;
+
+    sqlx::query!(
+        r#"
+    UPDATE users
+    SET password_hash = $1
+    WHERE id = $2
+    "#,
+        password_hash.expose_secret(),
+        user_id
+    )
+    .execute(executor)
+    .await
+    .context("Failed to change user's password in the database.")?;
+
+    Ok(())
+}
+
+fn compute_password_hash(password: ValidPassword) -> anyhow::Result<SecretString> {
+    let salt = SaltString::generate(rand::thread_rng());
+
+    let password_hash = Argon2::new(
+        Algorithm::Argon2id,
+        Version::V0x13,
+        Params::new(15000, 2, 1, None).unwrap(),
+    )
+    .hash_password(password.inner().expose_secret().as_bytes(), &salt)?
+    .to_string();
+
+    Ok(SecretString::from(password_hash))
 }

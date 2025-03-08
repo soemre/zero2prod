@@ -1,7 +1,8 @@
 use crate::{
     auth::{self, AuthError, Credentials},
     routes::error_chain_fmt,
-    session_state::SessionState,
+    session_state::Session,
+    utils,
 };
 use actix_web::{error::InternalError, http::header, post, web, HttpResponse, Responder};
 use actix_web_flash_messages::FlashMessage;
@@ -20,7 +21,7 @@ pub struct FormData {
 pub async fn login(
     form: web::Form<FormData>,
     pool: web::Data<PgPool>,
-    session: SessionState,
+    session: Session,
 ) -> Result<impl Responder, InternalError<LoginError>> {
     let credentials = Credentials {
         username: form.0.username,
@@ -36,9 +37,7 @@ pub async fn login(
                 .insert(id)
                 .map_err(|e| login_redirect(LoginError::UnexpectedError(e.into())))?;
             tracing::Span::current().record("user_id", tracing::field::display(&id));
-            Ok(HttpResponse::SeeOther()
-                .insert_header((header::LOCATION, "/admin/dashboard"))
-                .finish())
+            Ok(utils::see_other("/admin/dashboard"))
         }
         Err(e) => {
             let e = match e {

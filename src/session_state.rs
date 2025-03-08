@@ -1,22 +1,22 @@
-use actix_session::{Session, SessionExt, SessionGetError, SessionInsertError};
+use actix_session::{SessionExt, SessionGetError, SessionInsertError};
 use actix_web::{dev::Payload, FromRequest, HttpRequest};
 use serde::{de::DeserializeOwned, Serialize};
 use std::future::{ready, Ready};
 use std::marker::PhantomData;
 use uuid::Uuid;
 
-pub struct SessionStateKey<'a, T> {
+pub struct StateKey<'a, T> {
     value_type: PhantomData<T>,
-    session: &'a Session,
+    session: &'a actix_session::Session,
     key: &'static str,
 }
 
-impl<T> SessionStateKey<'_, T>
+impl<T> StateKey<'_, T>
 where
     T: Serialize + DeserializeOwned,
 {
-    fn new<'b, K>(state: &'b SessionState, key: &'static str) -> SessionStateKey<'b, K> {
-        SessionStateKey::<'b, K> {
+    fn new<'b, K>(state: &'b Session, key: &'static str) -> StateKey<'b, K> {
+        StateKey::<'b, K> {
             value_type: PhantomData,
             session: &state.0,
             key,
@@ -32,24 +32,28 @@ where
     }
 }
 
-pub struct SessionState(Session);
+pub struct Session(actix_session::Session);
 
-impl SessionState {
+impl Session {
     pub fn renew(&self) {
         self.0.renew();
     }
 
-    pub fn user_id(&self) -> SessionStateKey<'_, Uuid> {
-        SessionStateKey::<Uuid>::new(self, "user_id")
+    pub fn logout(&self) {
+        self.0.purge();
+    }
+
+    pub fn user_id(&self) -> StateKey<'_, Uuid> {
+        StateKey::<Uuid>::new(self, "user_id")
     }
 }
 
-impl FromRequest for SessionState {
-    type Error = <Session as FromRequest>::Error;
+impl FromRequest for Session {
+    type Error = <actix_session::Session as FromRequest>::Error;
 
-    type Future = Ready<Result<SessionState, Self::Error>>;
+    type Future = Ready<Result<Session, Self::Error>>;
 
     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
-        ready(Ok(SessionState(req.get_session())))
+        ready(Ok(Session(req.get_session())))
     }
 }

@@ -262,9 +262,41 @@ impl TestApp {
     pub async fn get_admin_dashboard_html(&self) -> String {
         self.get_admin_dashboard().await.text().await.unwrap()
     }
+
+    pub async fn get_change_password(&self) -> Response {
+        self.api_client
+            .get(format!("{}/admin/password", self.base_addr))
+            .send()
+            .await
+            .expect(RQST_FAIL)
+    }
+
+    pub async fn get_change_password_html(&self) -> String {
+        self.get_change_password().await.text().await.unwrap()
+    }
+
+    pub async fn post_change_password<Body>(&self, body: &Body) -> Response
+    where
+        Body: Serialize + ?Sized,
+    {
+        self.api_client
+            .post(format!("{}/admin/password", self.base_addr))
+            .form(body)
+            .send()
+            .await
+            .expect(RQST_FAIL)
+    }
+
+    pub async fn post_logout(&self) -> Response {
+        self.api_client
+            .post(format!("{}/admin/logout", self.base_addr))
+            .send()
+            .await
+            .expect(RQST_FAIL)
+    }
 }
 
-pub fn assert_redirecting(resp: &Response, location: &str) {
+pub fn assert_redirects_to(resp: &Response, location: &str) {
     assert_eq!(303, resp.status().as_u16());
     assert_eq!(location, resp.headers().get("Location").unwrap());
 }
