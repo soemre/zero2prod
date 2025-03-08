@@ -1,8 +1,7 @@
 use crate::{
-    auth::{self, AuthError, Credentials},
+    auth::{self, AuthError, Credentials, UserId},
     domain::ValidPassword,
     routes::admin::dashboard::get_username,
-    session_state::Session,
     utils,
 };
 use actix_web::{post, web, Responder};
@@ -17,16 +16,13 @@ struct FormData {
     new_password_check: SecretString,
 }
 
-#[post("/admin/password")]
+#[post("/password")]
 async fn change_password(
-    session: Session,
     form: web::Form<FormData>,
     pool: web::Data<PgPool>,
+    user_id: web::ReqData<UserId>,
 ) -> actix_web::Result<impl Responder> {
-    let user_id = match session.user_id().get().map_err(utils::e500)? {
-        Some(id) => id,
-        None => return Ok(utils::see_other("/login")),
-    };
+    let user_id = user_id.into_inner();
 
     if form.new_password.expose_secret() != form.new_password_check.expose_secret() {
         FlashMessage::error(
@@ -45,7 +41,7 @@ async fn change_password(
     };
 
     let credentials = {
-        let username = get_username(user_id, pool.as_ref())
+        let username = get_username(*user_id, pool.as_ref())
             .await
             .map_err(utils::e500)?;
         Credentials {
@@ -64,7 +60,7 @@ async fn change_password(
         };
     }
 
-    auth::change_password(user_id, new_password, pool.as_ref())
+    auth::change_password(*user_id, new_password, pool.as_ref())
         .await
         .map_err(utils::e500)?;
 

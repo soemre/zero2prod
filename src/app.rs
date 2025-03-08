@@ -1,4 +1,5 @@
 use crate::{
+    auth::reject_anonymous_users,
     config::{DatabaseSettings, Settings},
     email_client::EmailClient,
     routes::*,
@@ -7,7 +8,9 @@ use actix_session::{
     storage::{RedisSessionStore, SessionStore},
     SessionMiddleware,
 };
-use actix_web::{cookie::Key, dev::Server, web::Data, HttpServer};
+use actix_web::{
+    cookie::Key, dev::Server, middleware::from_fn as mw_fn, web, web::Data, HttpServer,
+};
 use actix_web_flash_messages::{storage::CookieMessageStore, FlashMessagesFramework};
 use core::net::SocketAddr;
 use secrecy::{ExposeSecret, SecretString};
@@ -88,12 +91,16 @@ impl App {
                 .service(confirm)
                 .service(publish_newsletter)
                 .service(home)
-                .service(admin_dashboard)
                 .service(login_form)
                 .service(login)
-                .service(change_password)
-                .service(change_password_form)
-                .service(logout)
+                .service(
+                    web::scope("/admin")
+                        .wrap(mw_fn(reject_anonymous_users))
+                        .service(admin_dashboard)
+                        .service(change_password)
+                        .service(change_password_form)
+                        .service(logout),
+                )
                 .app_data(Data::clone(&db_pool))
                 .app_data(Data::clone(&email_client))
                 .app_data(Data::clone(&base_url))
