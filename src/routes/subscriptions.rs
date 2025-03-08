@@ -2,6 +2,7 @@ use crate::{
     app::AppBaseUrl,
     domain::{NewSubscriber, SubscriberEmail, SubscriberName, SubscriptionToken},
     email_client::EmailClient,
+    utils,
 };
 use actix_web::{
     http::StatusCode,
@@ -162,24 +163,11 @@ async fn insert_subscriber(
     Ok(id)
 }
 
-pub fn error_chain_fmt(e: &dyn Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    writeln!(f, "{}\n", e)?;
-    let mut e = Some(e);
-    let e_iter = std::iter::from_fn(move || {
-        e = e?.source();
-        e
-    });
-    for e in e_iter {
-        writeln!(f, "Caused by:\n\t{}", e)?;
-    }
-    Ok(())
-}
-
 pub struct StoreTokenError(sqlx::Error);
 
 impl Debug for StoreTokenError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        error_chain_fmt(self, f)
+        utils::error_chain_fmt(self, f)
     }
 }
 
@@ -223,6 +211,6 @@ impl ResponseError for SubscribeError {
 
 impl Debug for SubscribeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        error_chain_fmt(self, f)
+        utils::error_chain_fmt(self, f)
     }
 }

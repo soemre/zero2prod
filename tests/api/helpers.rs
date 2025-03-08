@@ -1,10 +1,10 @@
 use argon2::{password_hash::SaltString, Algorithm, Argon2, Params, PasswordHasher, Version};
 use linkify::{LinkFinder, LinkKind};
 use reqwest::{Body, Response, Url};
-use serde::Serialize;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::{env, io, net::SocketAddr, sync::LazyLock};
 use uuid::Uuid;
+use wiremock::{matchers, Mock, ResponseTemplate};
 use wiremock::{MockServer, Request};
 use zero2prod::{
     app::App,
@@ -190,14 +190,25 @@ impl TestApp {
             .expect(RQST_FAIL)
     }
 
-    pub async fn post_newsletters<T>(&self, json: &T) -> Response
+    pub async fn get_newsletters(&self) -> Response {
+        self.api_client
+            .get(format!("{}/admin/newsletters", self.base_addr))
+            .send()
+            .await
+            .expect(RQST_FAIL)
+    }
+
+    pub async fn get_newsletters_html(&self) -> String {
+        self.get_newsletters().await.text().await.unwrap()
+    }
+
+    pub async fn post_newsletters<T>(&self, body: &T) -> Response
     where
-        T: Serialize + ?Sized,
+        T: serde::Serialize + ?Sized,
     {
         self.api_client
-            .post(format!("{}/newsletters", self.base_addr))
-            .basic_auth(&self.test_user.username, Some(&self.test_user.password))
-            .json(json)
+            .post(format!("{}/admin/newsletters", self.base_addr))
+            .form(body)
             .send()
             .await
             .expect(RQST_FAIL)
@@ -251,6 +262,16 @@ impl TestApp {
             .unwrap()
     }
 
+    pub async fn login_as_test_user(&self) {
+        let resp = self
+            .post_login(&serde_json::json!({
+                    "username": &self.test_user.username,
+                    "password": &self.test_user.password,
+            }))
+            .await;
+        assert_redirects_to(&resp, "/admin/dashboard");
+    }
+
     pub async fn get_admin_dashboard(&self) -> Response {
         self.api_client
             .get(format!("{}/admin/dashboard", self.base_addr))
@@ -277,7 +298,7 @@ impl TestApp {
 
     pub async fn post_change_password<Body>(&self, body: &Body) -> Response
     where
-        Body: Serialize + ?Sized,
+        Body: serde::Serialize + ?Sized,
     {
         self.api_client
             .post(format!("{}/admin/password", self.base_addr))
@@ -293,6 +314,37 @@ impl TestApp {
             .send()
             .await
             .expect(RQST_FAIL)
+    }
+
+    pub async fn create_unconfirmed_subscriber(&self) -> ConfirmationLinks {
+        let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+
+        let _mock_guard = Mock::given(matchers::path("/email"))
+            .and(matchers::method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .named("Create unconfirmed subscriber")
+            .expect(1)
+            .mount_as_scoped(&self.email_server)
+            .await;
+
+        self.post_subscriptions(body)
+            .await
+            .error_for_status()
+            .unwrap();
+
+        let email_request = &self.email_server.received_requests().await.unwrap()[0];
+
+        self.get_confirmation_links(email_request)
+    }
+
+    pub async fn create_confirmed_subscriber(&self) {
+        let confirmation_link = self.create_unconfirmed_subscriber().await.text;
+
+        reqwest::get(confirmation_link)
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
     }
 }
 

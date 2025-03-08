@@ -89,7 +89,6 @@ impl App {
                 .service(health_check)
                 .service(subscribe)
                 .service(confirm)
-                .service(publish_newsletter)
                 .service(home)
                 .service(login_form)
                 .service(login)
@@ -97,6 +96,8 @@ impl App {
                     web::scope("/admin")
                         .wrap(mw_fn(reject_anonymous_users))
                         .service(admin_dashboard)
+                        .service(newsletters_form)
+                        .service(publish_newsletter)
                         .service(change_password)
                         .service(change_password_form)
                         .service(logout),

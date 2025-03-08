@@ -148,13 +148,7 @@ async fn changing_password_works() {
     let new_password = Uuid::new_v4();
 
     // Act 1: Login
-    let resp = app
-        .post_login(&serde_json::json!({
-                "username": &app.test_user.username,
-                "password": &app.test_user.password,
-        }))
-        .await;
-    helpers::assert_redirects_to(&resp, "/admin/dashboard");
+    app.login_as_test_user().await;
 
     // Act 2: Change the password
     let resp = app

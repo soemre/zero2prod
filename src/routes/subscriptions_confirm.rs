@@ -1,4 +1,4 @@
-use crate::{domain::SubscriptionToken, routes::error_chain_fmt};
+use crate::{domain::SubscriptionToken, utils};
 use actix_web::{
     get,
     http::StatusCode,
@@ -91,7 +91,7 @@ pub enum ConfirmSubscriberError {
 
 impl Debug for ConfirmSubscriberError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        error_chain_fmt(self, f)
+        utils::error_chain_fmt(self, f)
     }
 }
 

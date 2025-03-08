@@ -1,6 +1,5 @@
 use crate::{
     auth::{self, AuthError, Credentials},
-    routes::error_chain_fmt,
     session_state::Session,
     utils,
 };
@@ -69,6 +68,6 @@ enum LoginError {
 
 impl Debug for LoginError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        error_chain_fmt(self, f)
+        utils::error_chain_fmt(self, f)
     }
 }

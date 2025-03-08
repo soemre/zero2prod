@@ -1,4 +1,4 @@
-use crate::{domain::ValidPassword, routes::error_chain_fmt, telemetry};
+use crate::{domain::ValidPassword, telemetry, utils};
 use anyhow::Context;
 use argon2::{
     password_hash::SaltString, Algorithm, Argon2, Params, PasswordHash, PasswordHasher,
@@ -19,7 +19,7 @@ pub enum AuthError {
 
 impl Debug for AuthError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        error_chain_fmt(self, f)
+        utils::error_chain_fmt(self, f)
     }
 }
 
