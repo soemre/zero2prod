@@ -2,7 +2,7 @@ use crate::{
     auth::UserId,
     domain::SubscriberEmail,
     email_client::EmailClient,
-    idempotency::{self, IdempotencyKey},
+    idempotency::{self, IdempotencyKey, NextAction},
     utils,
 };
 use actix_web::{post, web, Responder};
@@ -40,13 +40,16 @@ pub async fn publish_newsletter(
     } = form.0;
 
     let idempotency_key: IdempotencyKey = idempotency_key.try_into().map_err(utils::e400)?;
-    if let Some(r) = idempotency::get_saved_response(**user_id, &idempotency_key, pool.as_ref())
+    let txn = match idempotency::try_processing(**user_id, &idempotency_key, &pool)
         .await
         .map_err(utils::e500)?
     {
-        FlashMessage::info("All done! The newsletter has been published.").send();
-        return Ok(r);
-    }
+        NextAction::StartProcessing(t) => t,
+        NextAction::ReturnSavedResponse(r) => {
+            success_message().send();
+            return Ok(r);
+        }
+    };
 
     let subscribers = get_confirmed_subscribers(pool.as_ref())
         .await
@@ -66,14 +69,18 @@ pub async fn publish_newsletter(
         }
     }
 
-    FlashMessage::info("All done! The newsletter has been published.").send();
+    success_message().send();
     let resp = {
         let resp = utils::see_other("/admin/newsletters");
-        idempotency::save_response(resp, **user_id, &idempotency_key, pool.as_ref())
+        idempotency::save_response(resp, **user_id, &idempotency_key, txn)
             .await
             .map_err(utils::e500)?
     };
     Ok(resp)
+}
+
+fn success_message() -> FlashMessage {
+    FlashMessage::info("All done! The newsletter has been published.")
 }
 
 struct ConfirmedSubscriber {
