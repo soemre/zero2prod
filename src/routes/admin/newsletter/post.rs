@@ -1,4 +1,10 @@
-use crate::{auth::UserId, domain::SubscriberEmail, email_client::EmailClient, utils};
+use crate::{
+    auth::UserId,
+    domain::SubscriberEmail,
+    email_client::EmailClient,
+    idempotency::{self, IdempotencyKey},
+    utils,
+};
 use actix_web::{post, web, Responder};
 use actix_web_flash_messages::FlashMessage;
 use anyhow::Context;
@@ -11,6 +17,7 @@ struct FormData {
     title: String,
     text: String,
     html: String,
+    idempotency_key: String,
 }
 
 #[post("/newsletters")]
@@ -25,6 +32,22 @@ pub async fn publish_newsletter(
     ec: web::Data<EmailClient>,
     user_id: web::ReqData<UserId>,
 ) -> actix_web::Result<impl Responder> {
+    let FormData {
+        title,
+        text,
+        html,
+        idempotency_key,
+    } = form.0;
+
+    let idempotency_key: IdempotencyKey = idempotency_key.try_into().map_err(utils::e400)?;
+    if let Some(r) = idempotency::get_saved_response(**user_id, &idempotency_key, pool.as_ref())
+        .await
+        .map_err(utils::e500)?
+    {
+        FlashMessage::info("All done! The newsletter has been published.").send();
+        return Ok(r);
+    }
+
     let subscribers = get_confirmed_subscribers(pool.as_ref())
         .await
         .map_err(utils::e500)?;
@@ -32,7 +55,7 @@ pub async fn publish_newsletter(
     for s in subscribers {
         match s {
             Ok(s) => ec
-                .send_email(&s.email, &form.title, &form.html, &form.text)
+                .send_email(&s.email, &title, &html, &text)
                 .await
                 .with_context(|| format!("Failed to send newsletter issue to {}", s.email))
                 .map_err(utils::e500)?,
@@ -44,7 +67,13 @@ pub async fn publish_newsletter(
     }
 
     FlashMessage::info("All done! The newsletter has been published.").send();
-    Ok(utils::see_other("/admin/newsletters"))
+    let resp = {
+        let resp = utils::see_other("/admin/newsletters");
+        idempotency::save_response(resp, **user_id, &idempotency_key, pool.as_ref())
+            .await
+            .map_err(utils::e500)?
+    };
+    Ok(resp)
 }
 
 struct ConfirmedSubscriber {

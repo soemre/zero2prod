@@ -1,6 +1,7 @@
 use actix_web::{get, http::header, HttpResponse, Responder};
 use actix_web_flash_messages::IncomingFlashMessages;
 use std::fmt::Write;
+use uuid::Uuid;
 
 #[get("/newsletters")]
 pub async fn newsletters_form(
@@ -10,6 +11,7 @@ pub async fn newsletters_form(
     for m in flash_messages.iter() {
         writeln!(msg_html, "<p><i>{}</i></p>", m.content()).unwrap();
     }
+    let idempotency_key = Uuid::new_v4();
 
     Ok(HttpResponse::Ok()
         .content_type(header::ContentType::html())
@@ -36,6 +38,7 @@ pub async fn newsletters_form(
                 <input type="text" placeholder="..." name="html" >
             </label>
             <br>
+            <input hidden type="text" name="idempotency_key" value="{idempotency_key}">
             <button type="submit">Publish</button>
         </form>
         <p><a href="/admin/dashboard">&lt;- Back</a></p>

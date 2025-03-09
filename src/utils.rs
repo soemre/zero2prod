@@ -4,10 +4,6 @@ use std::{
     fmt::{Debug, Display},
 };
 
-pub fn e500(e: impl Debug + Display + 'static) -> actix_web::Error {
-    actix_web::error::ErrorInternalServerError(e)
-}
-
 pub fn see_other(location: &str) -> HttpResponse {
     HttpResponse::SeeOther()
         .insert_header((header::LOCATION, location))
@@ -25,4 +21,12 @@ pub fn error_chain_fmt(e: &dyn Error, f: &mut std::fmt::Formatter<'_>) -> std::f
         writeln!(f, "Caused by:\n\t{}", e)?;
     }
     Ok(())
+}
+
+pub fn e400(e: impl Debug + Display + 'static) -> actix_web::Error {
+    actix_web::error::ErrorBadRequest(e)
+}
+
+pub fn e500(e: impl Debug + Display + 'static) -> actix_web::Error {
+    actix_web::error::ErrorInternalServerError(e)
 }
