@@ -19,7 +19,7 @@ use zero2prod::{
 };
 
 const DB_CONNECTION_FAIL: &str = "Failed to connect to Postgres";
-pub const RQST_FAIL: &'static str = "Failed to execute request.";
+pub const RQST_FAIL: &str = "Failed to execute request.";
 
 const LOGGER_NAME: &str = "test";
 const LOGGER_FILTER_LEVEL: &str = "info";

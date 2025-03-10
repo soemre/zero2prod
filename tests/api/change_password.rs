@@ -170,9 +170,7 @@ async fn changing_password_works() {
 
     // Act 5: Follow the redirect
     let resp = app.get_login_html().await;
-    assert!(resp.contains(&format!(
-        r#"<p><i>You have successfully logged out.</i></p>"#
-    )));
+    assert!(resp.contains(r#"<p><i>You have successfully logged out.</i></p>"#));
 
     // Act 6: Login using the new password
     let resp = app

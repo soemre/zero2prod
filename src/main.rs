@@ -1,6 +1,10 @@
 use std::fmt::{Debug, Display};
 use tokio::task::JoinError;
-use zero2prod::{app::App, config, telemetry, workers::issue_delivery};
+use zero2prod::{
+    app::App,
+    config, telemetry,
+    workers::{expiration, issue_delivery},
+};
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
@@ -14,15 +18,20 @@ async fn main() -> anyhow::Result<()> {
         let f = App::build(&config).await?.run_until_stopped();
         tokio::spawn(f)
     };
-    let worker = {
-        let f = issue_delivery::run(config);
+    let issue_delivery_worker = {
+        let f = issue_delivery::Worker::builder(&config).finish();
+        tokio::spawn(f)
+    };
+    let expiration_worker = {
+        let f = expiration::Worker::builder(&config).finish();
         tokio::spawn(f)
     };
 
     // run concurrently
     tokio::select!(
         o = app => report_exit("API", o),
-        o = worker => report_exit("Background worker", o),
+        o = expiration_worker => report_exit("Expiration Background Worker", o),
+        o = issue_delivery_worker => report_exit("Issue Delivery Background Worker", o),
     );
 
     Ok(())

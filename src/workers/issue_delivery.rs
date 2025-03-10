@@ -4,18 +4,26 @@ use std::time::Duration;
 use tracing::Span;
 use uuid::Uuid;
 
-pub async fn run(config: Settings) -> anyhow::Result<()> {
-    let pool = config.database.get_db_pool();
-    let email_client = config.email_client.client();
-    worker_loop(pool, email_client).await
+pub struct Worker {
+    pool: PgPool,
+    email_client: EmailClient,
 }
+impl Worker {
+    pub fn builder(config: &Settings) -> Self {
+        let pool = config.database.get_db_pool();
+        let email_client = config.email_client.client();
+        Self { pool, email_client }
+    }
 
-async fn worker_loop(pool: PgPool, email_client: EmailClient) -> anyhow::Result<()> {
-    loop {
-        match try_execute_task(&pool, &email_client).await {
-            Err(_) => tokio::time::sleep(Duration::from_secs(1)).await,
-            Ok(ExecutionOutcome::EmptyQueue) => tokio::time::sleep(Duration::from_secs(10)).await,
-            Ok(ExecutionOutcome::TaskCompleted) => (),
+    pub async fn finish(self) -> anyhow::Result<()> {
+        loop {
+            match try_execute_task(&self.pool, &self.email_client).await {
+                Err(_) => tokio::time::sleep(Duration::from_secs(1)).await,
+                Ok(ExecutionOutcome::EmptyQueue) => {
+                    tokio::time::sleep(Duration::from_secs(10)).await
+                }
+                Ok(ExecutionOutcome::TaskCompleted) => (),
+            }
         }
     }
 }
