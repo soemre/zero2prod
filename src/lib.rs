@@ -8,3 +8,4 @@ pub mod routes;
 pub mod session_state;
 pub mod telemetry;
 pub mod utils;
+pub mod workers;

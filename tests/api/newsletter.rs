@@ -1,6 +1,10 @@
 use crate::helpers::{self, TestApp};
 use std::time::Duration;
-use wiremock::{matchers, Mock, ResponseTemplate};
+use wiremock::{matchers, Mock, MockBuilder, ResponseTemplate};
+
+fn when_sending_an_email() -> MockBuilder {
+    Mock::given(matchers::path("/email")).and(matchers::method("POST"))
+}
 
 #[tokio::test]
 async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
@@ -29,7 +33,9 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
 
     // Act: Follow the redirection
     let html = app.get_newsletters_html().await;
-    assert!(html.contains("<p><i>All done! The newsletter has been published.</i></p>"));
+    assert!(html.contains(
+        "<p><i>The newsletter issue has been accepted - emails will go out shortly.</i></p>"
+    ));
 }
 
 #[tokio::test]
@@ -38,8 +44,7 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
     let app = TestApp::spawn().await;
     app.create_confirmed_subscriber().await;
 
-    Mock::given(matchers::path("/email"))
-        .and(matchers::method("POST"))
+    when_sending_an_email()
         .respond_with(ResponseTemplate::new(200))
         .expect(1)
         .mount(&app.email_server)
@@ -60,7 +65,11 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
 
     // Act: Follow the redirection
     let html = app.get_newsletters_html().await;
-    assert!(html.contains("<p><i>All done! The newsletter has been published.</i></p>"));
+    assert!(html.contains(
+        "<p><i>The newsletter issue has been accepted - emails will go out shortly.</i></p>"
+    ));
+
+    app.dispatch_all_pending_emails().await;
 }
 
 #[tokio::test]
@@ -101,8 +110,7 @@ async fn newsletter_creation_is_idempotent() {
     app.create_confirmed_subscriber().await;
     app.login_as_test_user().await;
 
-    Mock::given(matchers::path("/email"))
-        .and(matchers::method("POST"))
+    when_sending_an_email()
         .respond_with(ResponseTemplate::new(200))
         .expect(1)
         .mount(&app.email_server)
@@ -121,7 +129,9 @@ async fn newsletter_creation_is_idempotent() {
 
     // Act 2: Follow the redirection
     let html = app.get_newsletters_html().await;
-    assert!(html.contains("<p><i>All done! The newsletter has been published.</i></p>"));
+    assert!(html.contains(
+        "<p><i>The newsletter issue has been accepted - emails will go out shortly.</i></p>"
+    ));
 
     // Act 3: Send the form again
     let resp = app.post_newsletters(&newsletter_request_body).await;
@@ -129,7 +139,11 @@ async fn newsletter_creation_is_idempotent() {
 
     // Act 4: Follow the redirection
     let html = app.get_newsletters_html().await;
-    assert!(html.contains("<p><i>All done! The newsletter has been published.</i></p>"));
+    assert!(html.contains(
+        "<p><i>The newsletter issue has been accepted - emails will go out shortly.</i></p>"
+    ));
+
+    app.dispatch_all_pending_emails().await;
 }
 
 #[tokio::test]
@@ -139,8 +153,7 @@ async fn concurrent_form_submission_is_handled_gracefully() {
     app.create_confirmed_subscriber().await;
     app.login_as_test_user().await;
 
-    Mock::given(matchers::path("/email"))
-        .and(matchers::method("POST"))
+    when_sending_an_email()
         .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(2)))
         .expect(1)
         .mount(&app.email_server)
@@ -161,4 +174,6 @@ async fn concurrent_form_submission_is_handled_gracefully() {
     // Assert
     assert_eq!(resp1.status(), resp2.status());
     assert_eq!(resp1.text().await.unwrap(), resp2.text().await.unwrap());
+
+    app.dispatch_all_pending_emails().await;
 }

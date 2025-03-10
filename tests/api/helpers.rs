@@ -1,4 +1,8 @@
 use argon2::{password_hash::SaltString, Algorithm, Argon2, Params, PasswordHasher, Version};
+use fake::{
+    faker::{internet::en::SafeEmail, name::en::Name},
+    Fake,
+};
 use linkify::{LinkFinder, LinkKind};
 use reqwest::{Body, Response, Url};
 use sqlx::{Connection, Executor, PgConnection, PgPool};
@@ -9,7 +13,9 @@ use wiremock::{MockServer, Request};
 use zero2prod::{
     app::App,
     config::{self, DatabaseSettings},
+    email_client::EmailClient,
     telemetry,
+    workers::issue_delivery,
 };
 
 const DB_CONNECTION_FAIL: &str = "Failed to connect to Postgres";
@@ -77,6 +83,7 @@ pub struct TestApp {
     pub socket_addr: SocketAddr,
     pub db_pool: PgPool,
     pub email_server: MockServer,
+    pub email_client: EmailClient,
     pub test_user: TestUser,
     pub api_client: reqwest::Client,
 }
@@ -121,8 +128,9 @@ impl TestApp {
         tokio::spawn(app.run_until_stopped());
 
         let test_app = TestApp {
-            db_pool: App::get_db_pool(&config.database),
+            db_pool: config.database.get_db_pool(),
             base_addr,
+            email_client: config.email_client.client(),
             email_server,
             socket_addr,
             test_user: TestUser::generate(),
@@ -317,7 +325,16 @@ impl TestApp {
     }
 
     pub async fn create_unconfirmed_subscriber(&self) -> ConfirmationLinks {
-        let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+        let body = {
+            let name: String = Name().fake();
+            let email: String = SafeEmail().fake();
+            let raw = serde_json::json!({
+                "name": name,
+                "email": email,
+            });
+
+            serde_urlencoded::to_string(raw).unwrap()
+        };
 
         let _mock_guard = Mock::given(matchers::path("/email"))
             .and(matchers::method("POST"))
@@ -332,7 +349,13 @@ impl TestApp {
             .error_for_status()
             .unwrap();
 
-        let email_request = &self.email_server.received_requests().await.unwrap()[0];
+        let email_request = &self
+            .email_server
+            .received_requests()
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
 
         self.get_confirmation_links(email_request)
     }
@@ -345,6 +368,12 @@ impl TestApp {
             .unwrap()
             .error_for_status()
             .unwrap();
+    }
+
+    pub async fn dispatch_all_pending_emails(&self) {
+        while let Ok(issue_delivery::ExecutionOutcome::TaskCompleted) =
+            issue_delivery::try_execute_task(&self.db_pool, &self.email_client).await
+        {}
     }
 }
 

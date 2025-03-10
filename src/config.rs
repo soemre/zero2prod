@@ -1,10 +1,10 @@
-use crate::domain::SubscriberEmail;
+use crate::{domain::SubscriberEmail, email_client::EmailClient};
 use config::{Config, File};
 use reqwest::Url;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_aux::field_attributes::deserialize_number_from_string;
-use sqlx::postgres::{PgConnectOptions, PgSslMode};
+use sqlx::postgres::{PgConnectOptions, PgPool, PgSslMode};
 use std::{env, error::Error, time::Duration};
 
 #[derive(Deserialize)]
@@ -51,6 +51,10 @@ impl DatabaseSettings {
             .database(&self.name)
             .ssl_mode(ssl_mode)
     }
+
+    pub fn get_db_pool(&self) -> PgPool {
+        PgPool::connect_lazy_with(self.connect_options())
+    }
 }
 
 #[derive(Deserialize, Clone)]
@@ -62,6 +66,14 @@ pub struct EmailClientSettings {
 }
 
 impl EmailClientSettings {
+    pub fn client(&self) -> EmailClient {
+        let sender = self.sender().expect("Invalid sender email address.");
+        let url = self.url().expect("Invalid base url.");
+        let timeout = self.timeout();
+        let auth_token = self.auth_token.clone();
+        EmailClient::new(url, sender, auth_token, timeout)
+    }
+
     pub fn sender(&self) -> Result<SubscriberEmail, String> {
         SubscriberEmail::parse(self.sender_email.clone())
     }

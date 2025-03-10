@@ -1,9 +1,4 @@
-use crate::{
-    auth::reject_anonymous_users,
-    config::{DatabaseSettings, Settings},
-    email_client::EmailClient,
-    routes::*,
-};
+use crate::{auth::reject_anonymous_users, config::Settings, email_client::EmailClient, routes::*};
 use actix_session::{
     storage::{RedisSessionStore, SessionStore},
     SessionMiddleware,
@@ -32,15 +27,8 @@ impl App {
         let listener =
             TcpListener::bind((config.application.host.clone(), config.application.port))?;
         let socket_addr = listener.local_addr().unwrap();
-        let db_conn = Self::get_db_pool(&config.database);
-        let email_client = {
-            let ec = &config.email_client;
-            let sender = ec.sender().expect("Invalid sender email address.");
-            let url = ec.url().expect("Invalid base url.");
-            let timeout = ec.timeout();
-            let auth_token = ec.auth_token.clone();
-            EmailClient::new(url, sender, auth_token, timeout)
-        };
+        let db_conn = config.database.get_db_pool();
+        let email_client = config.email_client.client();
         let base_url = AppBaseUrl(config.application.base_url.clone());
         let hmac_secret = config.application.hmac_secret.clone();
         let session_store = RedisSessionStore::new(config.redis_uri.expose_secret()).await?;
@@ -115,10 +103,6 @@ impl App {
 
     pub fn addr(&self) -> SocketAddr {
         self.socket_addr
-    }
-
-    pub fn get_db_pool(config: &DatabaseSettings) -> PgPool {
-        PgPool::connect_lazy_with(config.connect_options())
     }
 
     pub async fn run_until_stopped(self) -> anyhow::Result<()> {

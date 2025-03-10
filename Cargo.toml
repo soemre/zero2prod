@@ -55,6 +55,7 @@ fake = "3"
 linkify = "0.10.0"
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
+serde_urlencoded = "0.7.1"
 tokio = { version = "1.42.0", features = ["rt", "macros"] }
 wiremock = "0.6.2"
 
